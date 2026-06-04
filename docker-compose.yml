@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: eigg
+      POSTGRES_PASSWORD: eigg
+      POSTGRES_DB: eigg_prevent
+    ports:
+      - "5433:5432"   # 5433 on host to avoid clashing with a local Postgres
+    volumes:
+      - eigg_prevent_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eigg -d eigg_prevent"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  eigg_prevent_pgdata:
