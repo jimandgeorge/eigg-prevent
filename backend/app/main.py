@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api import audit, controls, evidence, framework, gaps, governance, members, pack, settings as settings_api
+from app.api import audit, controls, evidence, framework, gaps, governance, members, onboarding, pack, settings as settings_api
 from app.core.config import settings
 from app.core.database import engine
 
@@ -44,6 +44,16 @@ async def lifespan(_app):
             "ADD COLUMN IF NOT EXISTS size_bytes BIGINT",
         ):
             await conn.execute(text(f"ALTER TABLE evidence_items {col}"))
+        # Onboarding columns on org_profile (added after initial schema).
+        for col in (
+            "ADD COLUMN IF NOT EXISTS org_type TEXT",
+            "ADD COLUMN IF NOT EXISTS employee_band TEXT",
+            "ADD COLUMN IF NOT EXISTS turnover_band TEXT",
+            "ADD COLUMN IF NOT EXISTS existing_policy TEXT",
+            "ADD COLUMN IF NOT EXISTS culture_level TEXT",
+            "ADD COLUMN IF NOT EXISTS onboarded_at TIMESTAMPTZ",
+        ):
+            await conn.execute(text(f"ALTER TABLE org_profile {col}"))
         # Board governance hash-chained ledger (append-only).
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS policy_versions (
@@ -96,7 +106,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (framework, controls, evidence, gaps, governance, members, pack, audit, settings_api):
+for r in (framework, controls, evidence, gaps, governance, members, onboarding, pack, audit, settings_api):
     app.include_router(r.router, prefix=API_PREFIX)
 
 

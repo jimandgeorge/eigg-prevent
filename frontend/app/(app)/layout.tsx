@@ -1,8 +1,21 @@
+import { redirect } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import IdentitySync from "@/components/IdentitySync";
 import FaviconUpdater from "@/components/FaviconUpdater";
+import { fetchOnboardingStatus } from "@/lib/api";
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  // New, empty workspace → send the user through the onboarding wizard first.
+  // (If the backend is unreachable, fall through and let the page surface the error.)
+  // Note: redirect() throws NEXT_REDIRECT, so it must run outside the try/catch.
+  let needsOnboarding = false;
+  try {
+    needsOnboarding = (await fetchOnboardingStatus()).needs_onboarding;
+  } catch {
+    /* backend down — don't block the app shell */
+  }
+  if (needsOnboarding) redirect("/onboarding");
+
   return (
     <div className="flex h-screen overflow-hidden bg-white">
       <Sidebar />

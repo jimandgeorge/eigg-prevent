@@ -269,6 +269,40 @@ export interface ApprovalChain {
   genesis: string;
   count: number;
 }
+// ── Onboarding ────────────────────────────────────────────────────────────────
+export interface OnboardingProfile {
+  name?: string;
+  org_type: string;
+  employee_band: string;
+  turnover_band: string;
+  existing_policy: string;
+  culture_level: string;
+}
+export interface GeneratedItem {
+  code: string;
+  status: Status;
+  narrative: string;
+  owner: string;
+  pillar_id: string;
+  pillar_name: string;
+  title: string;
+  flagged: boolean;
+}
+export interface Generated {
+  items: GeneratedItem[];
+  projected_score: number;
+  projected_band: string;
+  scope: { employees_over_250: boolean; turnover_over_36m: boolean; in_scope: boolean; note: string };
+  provider: string;
+  model: string;
+}
+export const fetchOnboardingStatus = () =>
+  get<{ needs_onboarding: boolean; onboarded_at: string | null }>("/onboarding/status");
+export const generateOnboarding = (profile: OnboardingProfile) =>
+  mutate("/onboarding/generate", "POST", { profile }) as Promise<Generated>;
+export const commitOnboarding = (profile: OnboardingProfile, items: { code: string; status: string; narrative?: string; owner?: string }[]) =>
+  mutate("/onboarding/commit", "POST", { profile, items });
+
 export const fetchApprovals = () => get<ApprovalChain>("/governance/approvals");
 export const addApproval = (body: {
   title: string;

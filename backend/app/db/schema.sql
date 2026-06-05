@@ -14,6 +14,13 @@ CREATE TABLE IF NOT EXISTS org_profile (
     assessment_owner        TEXT,
     last_assessed_at        TIMESTAMPTZ,
     notes           TEXT,
+    -- Onboarding inputs (captured by the first-run wizard)
+    org_type        TEXT,            -- fintech | emi | payments | charity | other
+    employee_band   TEXT,            -- under_50 | 50_250 | over_250
+    turnover_band   TEXT,            -- under_10m | 10_36m | over_36m
+    existing_policy TEXT,            -- yes | no | draft
+    culture_level   TEXT,            -- ad_hoc | developing | established
+    onboarded_at    TIMESTAMPTZ,     -- set when the wizard completes (null = needs onboarding)
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

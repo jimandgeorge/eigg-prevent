@@ -101,7 +101,14 @@ export default function GapsPage() {
                 <SeverityPill severity={g.severity} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[13px] font-medium text-zinc-900">{g.title}</span>
+                    {g.requirement_code && <span className="text-[11px] font-mono text-zinc-400">{g.requirement_code}</span>}
+                    {g.requirement_id ? (
+                      <Link href={`/requirements/${g.requirement_id}`} className="text-[13px] font-medium text-zinc-900 hover:text-brand hover:underline">
+                        {g.title}
+                      </Link>
+                    ) : (
+                      <span className="text-[13px] font-medium text-zinc-900">{g.title}</span>
+                    )}
                     {g.pillar_name && <span className="text-[11px] text-zinc-400">· {g.pillar_name}</span>}
                     {g.source === "ai" && (
                       <span className="text-[9px] font-semibold tracking-wide text-brand bg-emerald-50 rounded px-1.5 py-0.5">AI</span>
@@ -116,7 +123,7 @@ export default function GapsPage() {
                   <div className="flex items-center gap-3 mt-2.5">
                     {g.requirement_id && (
                       <Link href={`/requirements/${g.requirement_id}`} className="text-[11px] text-brand hover:underline">
-                        {g.requirement_code} →
+                        Open requirement →
                       </Link>
                     )}
                     {tab === "open" && (

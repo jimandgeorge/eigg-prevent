@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { fetchFramework, fetchGaps } from "@/lib/api";
 import { ReadinessRing, ReviewBadge, ScoreBar, SeverityPill, scoreColor } from "@/components/ui";
+import GettingStarted from "@/components/GettingStarted";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ const PILLAR_ICON: Record<string, string> = {
   training: "M12 4L2 9l10 5 10-5-10-5zm0 12v6m-6-9v4c0 1 2.7 2.5 6 2.5s6-1.5 6-2.5v-4",
 };
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: { onboarded?: string } }) {
   let fw, gaps;
   try {
     [fw, gaps] = await Promise.all([fetchFramework(), fetchGaps("open")]);
@@ -24,6 +25,12 @@ export default async function DashboardPage() {
   const notStarted = fw.pillars.reduce((s, p) => s + (p.status_breakdown.not_started || 0), 0);
   const totalReqs = fw.pillars.reduce((s, p) => s + p.requirement_count, 0);
 
+  const gsActions = gaps.slice(0, 3).map((g) => ({
+    label: g.title,
+    href: g.requirement_id ? `/requirements/${g.requirement_id}` : "/gaps",
+    severity: g.severity,
+  }));
+
   return (
     <div className="space-y-9">
       <div>
@@ -33,6 +40,9 @@ export default async function DashboardPage() {
           (ECCTA 2023), evidenced across the five pillars of reasonable procedures.
         </p>
       </div>
+
+      <GettingStarted justOnboarded={searchParams.onboarded === "1"} actions={gsActions} />
+
 
       {/* Headline */}
       <section className="flex items-center gap-10 flex-wrap">
@@ -46,77 +56,88 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* Pillars */}
-      <section className="space-y-2.5">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">Pillars</span>
-          <Link href="/pack" className="text-[12px] text-brand hover:underline">Generate evidence pack →</Link>
-        </div>
-        {fw.pillars.map((p) => (
-          <Link
-            key={p.id}
-            href={`/pillars/${p.id}`}
-            className="group flex items-center gap-4 px-4 py-3.5 rounded-lg border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/60 transition-colors"
-          >
-            <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-              style={{ background: `${scoreColor(p.score)}1a`, color: scoreColor(p.score) }}>
-              <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
-                <path d={PILLAR_ICON[p.id] ?? PILLAR_ICON.controls} />
-              </svg>
-            </span>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-[14px] font-medium text-zinc-900 truncate">{p.name}</span>
-                {p.open_gaps > 0 && (
-                  <span className="text-[10px] font-semibold text-red-600 bg-red-50 rounded px-1.5 py-0.5">
-                    {p.open_gaps} gap{p.open_gaps > 1 ? "s" : ""}
-                  </span>
-                )}
-                {p.overdue_count > 0 && (
-                  <span className="text-[10px] font-semibold text-orange-600 bg-orange-50 rounded px-1.5 py-0.5">
-                    {p.overdue_count} overdue
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-[11px] text-zinc-400 truncate">{p.principle}</span>
-                <span className="text-zinc-300">·</span>
-                <ReviewBadge due={p.next_review_due} overdue={p.overdue_count > 0} />
-              </div>
-              <div className="mt-2 max-w-md"><ScoreBar score={p.score} /></div>
-            </div>
-            <div className="text-right shrink-0 w-16">
-              <div className="text-[18px] font-semibold tabular-nums" style={{ color: scoreColor(p.score) }}>
-                {Math.round(p.score)}
-              </div>
-              <div className="text-[10px] text-zinc-400">{p.band}</div>
-            </div>
-          </Link>
-        ))}
-      </section>
-
-      {/* Top gaps */}
-      {gaps.length > 0 && (
-        <section className="space-y-2">
+      {/* Pillars (left) + Priority gaps (right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-x-8 gap-y-8 items-start">
+        {/* Pillars */}
+        <section className="lg:col-span-3 space-y-2.5">
           <div className="flex items-center justify-between px-1">
-            <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">Priority gaps</span>
-            <Link href="/gaps" className="text-[12px] text-zinc-500 hover:text-zinc-700">All gaps →</Link>
+            <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">Pillars</span>
+            <Link href="/pack" className="text-[12px] text-brand hover:underline">Generate evidence pack →</Link>
           </div>
-          {gaps.slice(0, 4).map((g) => (
-            <div key={g.id} className="flex items-start gap-3 px-4 py-3 rounded-lg border border-zinc-200">
-              <SeverityPill severity={g.severity} />
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium text-zinc-900">{g.title}</div>
-                <div className="text-[12px] text-zinc-500 mt-0.5 line-clamp-2">{g.detail}</div>
+          {fw.pillars.map((p) => (
+            <Link
+              key={p.id}
+              href={`/pillars/${p.id}`}
+              className="group flex items-center gap-4 px-4 py-3.5 rounded-lg border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/60 transition-colors"
+            >
+              <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: `${scoreColor(p.score)}1a`, color: scoreColor(p.score) }}>
+                <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                  <path d={PILLAR_ICON[p.id] ?? PILLAR_ICON.controls} />
+                </svg>
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[14px] font-medium text-zinc-900 truncate">{p.name}</span>
+                  {p.open_gaps > 0 && (
+                    <span className="text-[10px] font-semibold text-red-600 bg-red-50 rounded px-1.5 py-0.5">
+                      {p.open_gaps} gap{p.open_gaps > 1 ? "s" : ""}
+                    </span>
+                  )}
+                  {p.overdue_count > 0 && (
+                    <span className="text-[10px] font-semibold text-orange-600 bg-orange-50 rounded px-1.5 py-0.5">
+                      {p.overdue_count} overdue
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-[11px] text-zinc-400 truncate">{p.principle}</span>
+                  <span className="text-zinc-300">·</span>
+                  <ReviewBadge due={p.next_review_due} overdue={p.overdue_count > 0} />
+                </div>
+                <div className="mt-2"><ScoreBar score={p.score} /></div>
               </div>
-              {g.requirement_code && (
-                <span className="text-[11px] font-mono text-zinc-400 shrink-0">{g.requirement_code}</span>
-              )}
-            </div>
+              <div className="text-right shrink-0 w-12">
+                <div className="text-[18px] font-semibold tabular-nums" style={{ color: scoreColor(p.score) }}>
+                  {Math.round(p.score)}
+                </div>
+                <div className="text-[10px] text-zinc-400">{p.band}</div>
+              </div>
+            </Link>
           ))}
         </section>
-      )}
+
+        {/* Priority gaps */}
+        <section className="lg:col-span-2 space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">Priority gaps</span>
+            {gaps.length > 0 && <Link href="/gaps" className="text-[12px] text-zinc-500 hover:text-zinc-700">All gaps →</Link>}
+          </div>
+          {gaps.length === 0 ? (
+            <div className="px-4 py-6 rounded-lg border border-zinc-200 text-center">
+              <p className="text-[13px] font-medium text-zinc-700">No open gaps</p>
+              <p className="text-[12px] text-zinc-400 mt-0.5">No outstanding weaknesses in the framework.</p>
+            </div>
+          ) : (
+            gaps.slice(0, 6).map((g) => (
+              <Link
+                key={g.id}
+                href={g.requirement_id ? `/requirements/${g.requirement_id}` : "/gaps"}
+                className="block px-4 py-3 rounded-lg border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/60 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <SeverityPill severity={g.severity} />
+                  {g.requirement_code && <span className="text-[11px] font-mono text-zinc-400">{g.requirement_code}</span>}
+                  {g.pillar_name && <span className="text-[11px] text-zinc-400 truncate">· {g.pillar_name}</span>}
+                </div>
+                <div className="text-[13px] font-medium text-zinc-900 mt-1.5">{g.title}</div>
+                <div className="text-[12px] text-zinc-500 mt-0.5 line-clamp-2">{g.detail}</div>
+              </Link>
+            ))
+          )}
+        </section>
+      </div>
     </div>
   );
 }
