@@ -4,7 +4,7 @@ import Providers from "@/components/Providers";
 
 export const metadata: Metadata = {
   title: "EIGG Prevent",
-  description: "Evidence your fraud prevention framework — failure to prevent fraud (ECCTA 2023).",
+  description: "Evidence your reasonable procedures under ECCTA 2023. AI gap analysis, board governance, one-click evidence pack.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
