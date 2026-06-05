@@ -36,7 +36,7 @@ class Settings(BaseSettings):
 
     # Email (invites). If resend_api_key is unset, invites are stubbed (link logged).
     resend_api_key: str | None = None
-    email_from: str = "EIGG <noreply@eigg.co.uk>"
+    email_from: str = "EIGG <noreply@eigg.io>"
 
 
 settings = Settings()

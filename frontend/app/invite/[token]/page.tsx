@@ -55,7 +55,7 @@ export default function InvitePage({ params }: { params: { token: string } }) {
             Set your password to access your organisation&apos;s fraud prevention workspace.
           </p>
         </div>
-        <div className="text-white/25 text-[11px]">EIGG · eigg.co.uk</div>
+        <div className="text-white/25 text-[11px]">EIGG · eigg.io</div>
       </div>
 
       {/* Form */}

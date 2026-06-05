@@ -24,7 +24,7 @@ def _invite_html(inviter: str, org: str, link: str) -> str:
     <p style="font-size:12px;color:#a1a1aa;margin:24px 0 0">This link expires in 72 hours.</p>
   </div>
   <div style="padding:18px 24px;border-top:1px solid #f0f0f0;font-size:11px;color:#a1a1aa;text-align:center">
-    EIGG · eigg.co.uk · If you weren't expecting this email, ignore it.
+    EIGG · eigg.io · If you weren't expecting this email, ignore it.
   </div>
 </div>"""
 

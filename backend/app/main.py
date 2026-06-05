@@ -11,7 +11,7 @@ from app.api import admin, audit, auth, controls, evidence, framework, gaps, gov
 from app.core.config import settings
 from app.core.database import engine
 
-API_PREFIX = "/api"
+API_PREFIX = "/api/v1"
 
 
 @asynccontextmanager

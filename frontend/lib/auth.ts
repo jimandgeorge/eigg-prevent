@@ -24,7 +24,7 @@ function checkRateLimit(ip: string): boolean {
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
-const API = (process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001") + "/api";
+const API = (process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001") + "/api/v1";
 
 function buildProviders() {
   const providers: NextAuthOptions["providers"] = [];

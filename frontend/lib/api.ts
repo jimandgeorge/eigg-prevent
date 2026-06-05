@@ -1,5 +1,5 @@
 // EIGG Prevent API client. Backend routes are namespaced under /api (see backend main.py).
-const API_PREFIX = "/api";
+const API_PREFIX = "/api/v1";
 
 // Server-side (Docker) uses API_URL; the browser uses NEXT_PUBLIC_API_URL.
 const BASE =

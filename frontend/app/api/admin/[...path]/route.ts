@@ -5,7 +5,7 @@ import { authOptions } from "@/lib/auth";
 // Server-side proxy for the platform admin API. Enforces the is_admin session check,
 // then forwards to the FastAPI backend with the internal secret (never exposed to the
 // browser). All /api/admin/* calls from the admin UI go through here.
-const BACKEND = (process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001") + "/api/admin";
+const BACKEND = (process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001") + "/api/v1/admin";
 const SECRET = process.env.INTERNAL_API_SECRET ?? "";
 
 async function proxy(req: NextRequest, path: string[]) {
