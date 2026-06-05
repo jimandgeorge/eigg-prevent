@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     # App
     environment: str = "development"
     cors_origins: str = "http://localhost:3001"
+    upload_dir: str = "uploads"   # where uploaded evidence files are stored
 
     # LLM
     llm_provider: str = "mock"

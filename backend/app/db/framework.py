@@ -151,3 +151,58 @@ STATUS_LABELS = {
     "implemented": "Implemented",
     "embedded": "Embedded",
 }
+
+# Controls library — a starter control narrative per requirement so a new customer
+# isn't writing from a blank page. Offered on the requirement detail ("Use template");
+# never auto-applied. [bracketed] parts prompt the customer to complete the detail.
+CONTROL_TEMPLATES = {
+    "RA-1": "A written fraud risk assessment covering the failure-to-prevent-fraud offence is maintained by [owner], formally approved by the board, version-controlled and reviewed at least annually.",
+    "RA-2": "The risk assessment enumerates the specific fraud scenarios the organisation could commit or benefit from and maps each to the categories of associated person (employees, agents, subsidiaries, suppliers) who could perpetrate it.",
+    "RA-3": "Each identified fraud risk is scored for likelihood and impact using a defined methodology, with documented rationale and a residual-risk view after controls.",
+    "RA-4": "The risk assessment is reviewed on an [annual] cadence and re-run on material change (new products, M&A, regulatory change), with completed reviews logged and dated.",
+    "RA-5": "Threat intelligence and regulatory/industry typologies (e.g. UK Finance, FCA alerts) are monitored by [owner] and findings are fed into the risk register.",
+    "CT-1": "A board-approved anti-fraud policy proportionate to the assessed risk is published and accessible to all staff, owned by [owner] and acknowledged at onboarding.",
+    "CT-2": "Preventive controls (segregation of duties, approval limits, dual authorisation, payment verification) are mapped to each material risk in a controls matrix maintained by [owner].",
+    "CT-3": "Detective controls — transaction monitoring, reconciliation, exception reporting and analytics — operate to identify fraud that prevention misses, with exceptions reviewed by [owner].",
+    "CT-4": "A confidential whistleblowing/speak-up channel with anti-retaliation protection is available to all staff and associated persons and is actively communicated.",
+    "CT-5": "A documented fraud response plan defines how suspected fraud is investigated, escalated, reported (including external reporting triggers) and remediated, with named roles.",
+    "CT-6": "Anti-fraud obligations extend to agents and outsourced functions through standard contractual clauses and active oversight of the controls they operate on our behalf.",
+    "BG-1": "The board has formally endorsed a stance against fraud and fosters an anti-fraud culture, evidenced by a minuted statement reaffirmed [annually].",
+    "BG-2": "A named senior individual ([owner]) owns the fraud prevention framework, with the mandate documented in their role profile / terms of reference.",
+    "BG-3": "The board receives fraud risk management information at least [quarterly] and its consideration is minuted.",
+    "BG-4": "The framework's effectiveness is independently assured (internal audit / assurance) on a defined cycle, with improvement actions tracked to closure.",
+    "BG-5": "Adequate budget, headcount and tooling are allocated to fraud prevention and reviewed as part of annual planning.",
+    "DD-1": "Risk-based due diligence is applied to associated persons proportionate to their fraud risk, per a documented procedure tiered by counterparty type.",
+    "DD-2": "Pre-engagement background / vetting checks are performed to a defined standard for roles with fraud exposure before the person is engaged.",
+    "DD-3": "Third parties and suppliers are onboarded with anti-fraud due diligence and standard anti-fraud contractual terms.",
+    "DD-4": "Due diligence on associated persons is refreshed on a risk-based cadence through the relationship, with re-screening logged.",
+    "TR-1": "All staff complete proportionate fraud prevention training, with the curriculum and covered population maintained by [owner].",
+    "TR-2": "Higher-risk roles receive targeted enhanced fraud training mapped to their specific exposure.",
+    "TR-3": "The anti-fraud policy and speak-up channel are actively communicated and accessible, with acknowledgements captured.",
+    "TR-4": "Training completion is tracked and overdue completion is followed up, with reporting to [owner].",
+    "TR-5": "Training is refreshed on an [annual] cadence and after material change, with last and next due dates tracked.",
+}
+
+# Cross-pillar dependencies — requirements that reinforce each other across pillars.
+# Strengthening one also lifts the linked requirement's pillar. (code_a, code_b, reason)
+CROSS_PILLAR_LINKS = [
+    ("CT-6", "DD-3", "Both address third parties acting on the firm's behalf."),
+    ("CT-1", "TR-3", "A policy only works if it is actively communicated."),
+    ("RA-4", "BG-4", "Risk-assessment review feeds framework monitoring and review."),
+    ("BG-1", "CT-1", "Top-level commitment underpins the anti-fraud policy."),
+    ("DD-2", "TR-2", "High-risk roles need both pre-engagement screening and enhanced training."),
+    ("RA-2", "DD-1", "Same population — the associated persons who could offend."),
+    ("CT-3", "BG-3", "Monitoring output is the board's fraud risk MI."),
+    ("TR-4", "BG-3", "Training completion is reported as board MI."),
+]
+
+
+def related_codes(code: str) -> list[tuple[str, str]]:
+    """Return [(other_code, reason), ...] linked to the given requirement code."""
+    out = []
+    for a, b, reason in CROSS_PILLAR_LINKS:
+        if a == code:
+            out.append((b, reason))
+        elif b == code:
+            out.append((a, reason))
+    return out

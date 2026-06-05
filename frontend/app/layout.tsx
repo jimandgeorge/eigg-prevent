@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import Providers from "@/components/Providers";
 
 export const metadata: Metadata = {
   title: "EIGG Prevent",
@@ -9,7 +10,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en-GB">
-      <body className="antialiased text-[14px]">{children}</body>
+      <body className="antialiased text-[14px]">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

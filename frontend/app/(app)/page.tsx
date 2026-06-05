@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { fetchFramework, fetchGaps } from "@/lib/api";
-import { ReadinessRing, ScoreBar, SeverityPill, scoreColor } from "@/components/ui";
+import { ReadinessRing, ReviewBadge, ScoreBar, SeverityPill, scoreColor } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +42,7 @@ export default async function DashboardPage() {
           <Stat label="Not started" value={notStarted} tone={notStarted > 0 ? "warn" : "ok"} />
           <Stat label="Open gaps" value={gaps.length} tone={gaps.length > 0 ? "warn" : "ok"} />
           <Stat label="High severity" value={highGaps} tone={highGaps > 0 ? "bad" : "ok"} />
+          <Stat label="Overdue reviews" value={fw.overdue_count} tone={fw.overdue_count > 0 ? "bad" : "ok"} />
         </div>
       </section>
 
@@ -72,8 +73,17 @@ export default async function DashboardPage() {
                     {p.open_gaps} gap{p.open_gaps > 1 ? "s" : ""}
                   </span>
                 )}
+                {p.overdue_count > 0 && (
+                  <span className="text-[10px] font-semibold text-orange-600 bg-orange-50 rounded px-1.5 py-0.5">
+                    {p.overdue_count} overdue
+                  </span>
+                )}
               </div>
-              <div className="text-[11px] text-zinc-400 mt-0.5 truncate">{p.principle}</div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[11px] text-zinc-400 truncate">{p.principle}</span>
+                <span className="text-zinc-300">·</span>
+                <ReviewBadge due={p.next_review_due} overdue={p.overdue_count > 0} />
+              </div>
               <div className="mt-2 max-w-md"><ScoreBar score={p.score} /></div>
             </div>
             <div className="text-right shrink-0 w-16">

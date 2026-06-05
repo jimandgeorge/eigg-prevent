@@ -39,11 +39,13 @@ export function StatusPill({ status }: { status: Status }) {
 }
 
 export function scoreColor(score: number): string {
-  if (score >= 85) return "#10b981";
-  if (score >= 60) return "#14b8a6";
-  if (score >= 30) return "#f59e0b";
-  if (score > 0) return "#f97316";
-  return "#d4d4d8";
+  // Aligned with the readiness bands (scoring.band): red→green ramp.
+  if (score >= 86) return "#10b981"; // Robust
+  if (score >= 71) return "#22c55e"; // Established
+  if (score >= 51) return "#f59e0b"; // Progressing
+  if (score >= 31) return "#f97316"; // Developing
+  if (score > 0) return "#ef4444"; // Not started (low)
+  return "#d4d4d8"; // nothing recorded
 }
 
 export function ScoreBar({ score, height = 6 }: { score: number; height?: number }) {
@@ -85,6 +87,25 @@ export function ReadinessRing({ score, size = 132, band }: { score: number; size
       </div>
     </div>
   );
+}
+
+export function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  // iso is a YYYY-MM-DD date; pin to local midnight so the day doesn't shift.
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+// Review status — the offence requires regular review; overdue creates urgency.
+export function ReviewBadge({ due, overdue }: { due: string | null; overdue: boolean }) {
+  if (!due) return <span className="text-[11px] text-zinc-400">No review scheduled</span>;
+  if (overdue)
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-red-600">
+        <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+        Review overdue · {formatDate(due)}
+      </span>
+    );
+  return <span className="text-[11px] text-zinc-500">Review due {formatDate(due)}</span>;
 }
 
 export const SEVERITY_META: Record<string, { text: string; bg: string; label: string }> = {

@@ -23,5 +23,8 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Uploaded evidence files (runtime data)
+backend/uploads/
+
 # Logs
 *.log

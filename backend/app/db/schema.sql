@@ -17,6 +17,34 @@ CREATE TABLE IF NOT EXISTS org_profile (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ── Workspace members (control owners, approvers, training/DD subjects) ──────
+CREATE TABLE IF NOT EXISTS workspace_members (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        TEXT NOT NULL,
+    email       TEXT,
+    role        TEXT,
+    active      BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ── Board governance: append-only, hash-chained approvals / policy versions ──
+-- Each row's hash chains the previous row's hash, so any tampering with an earlier
+-- approval breaks every subsequent hash — a cryptographic, verifiable record that the
+-- board approved the framework and its policies, and when.
+CREATE TABLE IF NOT EXISTS policy_versions (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    seq         BIGSERIAL,
+    title       TEXT NOT NULL,
+    version     TEXT NOT NULL,
+    summary     TEXT,
+    author      TEXT,                  -- who recorded the approval (actor)
+    approved_by TEXT NOT NULL,         -- approver (workspace member / board)
+    approved_at DATE,
+    prev_hash   TEXT NOT NULL,
+    hash        TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ── Framework definition (seeded, reference data) ───────────────────────────
 CREATE TABLE IF NOT EXISTS pillars (
     id          TEXT PRIMARY KEY,          -- e.g. 'risk_assessment'
@@ -57,11 +85,16 @@ CREATE TABLE IF NOT EXISTS evidence_items (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     requirement_id  UUID NOT NULL REFERENCES requirements(id),
     title           TEXT NOT NULL,
-    -- kind: policy | document | record | link | attestation | training | minutes
+    -- kind: file | policy | document | record | link | attestation | training | minutes
     kind            TEXT NOT NULL DEFAULT 'document',
-    reference       TEXT,                  -- URL or location/where it lives
+    reference       TEXT,                  -- URL/location (for link evidence)
     description     TEXT,
     dated           DATE,                  -- date the evidence relates to
+    -- uploaded file (primary path): stored on disk, original name kept for download
+    stored_path     TEXT,
+    original_filename TEXT,
+    content_type    TEXT,
+    size_bytes      BIGINT,
     added_by        TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -112,4 +145,11 @@ $fn$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_audit_immutable ON audit_log;
 CREATE TRIGGER trg_audit_immutable
     BEFORE UPDATE OR DELETE ON audit_log
+    FOR EACH ROW EXECUTE FUNCTION block_audit_mutation();
+
+-- Policy/approval ledger is append-only too (the hash chain enforces integrity,
+-- the trigger stops casual edits/deletes).
+DROP TRIGGER IF EXISTS trg_policy_versions_immutable ON policy_versions;
+CREATE TRIGGER trg_policy_versions_immutable
+    BEFORE UPDATE OR DELETE ON policy_versions
     FOR EACH ROW EXECUTE FUNCTION block_audit_mutation();

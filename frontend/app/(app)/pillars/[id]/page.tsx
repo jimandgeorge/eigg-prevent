@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { fetchPillar } from "@/lib/api";
-import { ReadinessRing, StatusPill, scoreColor } from "@/components/ui";
+import { ReadinessRing, ReviewBadge, StatusPill, scoreColor } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +23,28 @@ export default async function PillarPage({ params }: { params: { id: string } })
           <h1 className="text-[20px] font-semibold tracking-tight text-zinc-900">{pillar.name}</h1>
           <div className="text-[12px] text-brand font-medium mt-1">{pillar.principle}</div>
           <p className="text-[13px] text-zinc-500 mt-2 max-w-xl">{pillar.description}</p>
+          <div className="mt-2"><ReviewBadge due={pillar.next_review_due} overdue={pillar.overdue_count > 0} /></div>
           <div className="flex gap-6 mt-4">
             <MiniStat label="Requirements" value={pillar.requirement_count} />
             <MiniStat label="Embedded" value={pillar.status_breakdown.embedded + pillar.status_breakdown.implemented} />
             <MiniStat label="Open gaps" value={pillar.open_gaps} warn={pillar.open_gaps > 0} />
+            <MiniStat label="Overdue" value={pillar.overdue_count} warn={pillar.overdue_count > 0} />
           </div>
         </div>
       </div>
+
+      {pillar.id === "board_governance" && (
+        <Link href="/governance" className="flex items-center gap-3 px-4 py-3 rounded-lg border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/60 transition-colors">
+          <span className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z" /><path d="M9 12l2 2 4-4" /></svg>
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-medium text-zinc-900">Approval ledger</div>
+            <div className="text-[12px] text-zinc-400">Hash-chained record of board approvals — tamper-evident</div>
+          </div>
+          <span className="text-[12px] text-brand">Open →</span>
+        </Link>
+      )}
 
       <section className="space-y-2">
         <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest px-1">Requirements</span>
@@ -43,7 +58,8 @@ export default async function PillarPage({ params }: { params: { id: string } })
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-[13px] font-medium text-zinc-900 truncate">{r.title}</span>
-                {r.open_gaps > 0 && <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />}
+                {r.open_gaps > 0 && <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" title="Open gap" />}
+                {r.overdue && <span className="text-[9px] font-semibold text-orange-600 bg-orange-50 rounded px-1 py-px shrink-0">OVERDUE</span>}
               </div>
               <div className="text-[12px] text-zinc-400 mt-0.5 truncate">{r.description}</div>
             </div>

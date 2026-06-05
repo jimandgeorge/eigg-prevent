@@ -64,7 +64,7 @@ def _mock_findings(fw: dict) -> list[dict]:
                 findings.append({
                     "requirement_code": r["code"], "pillar_id": p["id"], "severity": "high",
                     "title": f"{r['title']} is not in place",
-                    "detail": (f"[MOCK] {r['code']} ({p['name']}) has not been started. "
+                    "detail": (f"{r['code']} ({p['name']}) has not been started. "
                                f"{r['description']} Without it the reasonable-procedures defence is weaker."),
                     "recommendation": r["guidance"] or "Stand up this requirement and record evidence.",
                 })
@@ -72,7 +72,7 @@ def _mock_findings(fw: dict) -> list[dict]:
                 findings.append({
                     "requirement_code": r["code"], "pillar_id": p["id"], "severity": "medium",
                     "title": f"{r['title']} has no evidence on record",
-                    "detail": (f"[MOCK] {r['code']} is marked implemented but no evidence is attached. "
+                    "detail": (f"{r['code']} is marked implemented but no evidence is attached. "
                                "A defence relies on demonstrable evidence, not assertion."),
                     "recommendation": "Attach the document or record that demonstrates this control.",
                 })

@@ -1,8 +1,11 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.db.framework import CONTROL_TEMPLATES, related_codes
 from app.services.framework_service import load_framework
 
 router = APIRouter(prefix="/framework", tags=["framework"])
@@ -38,7 +41,9 @@ async def get_requirement(requirement_id: str, db: AsyncSession = Depends(get_db
         raise HTTPException(404, "Requirement not found")
 
     evidence = (await db.execute(text("""
-        SELECT id, title, kind, reference, description, dated, added_by, created_at
+        SELECT id, title, kind, reference, description, dated, added_by, created_at,
+               original_filename, content_type, size_bytes,
+               (stored_path IS NOT NULL) AS is_file
         FROM evidence_items WHERE requirement_id = :rid ORDER BY created_at DESC
     """), {"rid": requirement_id})).mappings().all()
 
@@ -65,6 +70,32 @@ async def get_requirement(requirement_id: str, db: AsyncSession = Depends(get_db
         if hasattr(v, "isoformat"):
             result[k] = v.isoformat()
     result["id"] = str(result["id"])
+    result["overdue"] = bool(req["next_review_due"] and req["next_review_due"] < date.today())
+    result["template"] = CONTROL_TEMPLATES.get(req["code"])
     result["evidence"] = _ser(evidence)
     result["gaps"] = _ser(gaps)
+
+    # Cross-pillar dependencies — resolve linked requirement codes to their detail.
+    links = related_codes(req["code"])
+    related = []
+    if links:
+        codes = [c for c, _ in links]
+        reason_by_code = {c: r for c, r in links}
+        rows = (await db.execute(text("""
+            SELECT r.id, r.code, r.title, r.pillar_id, p.name AS pillar_name, c.status
+            FROM requirements r JOIN pillars p ON p.id = r.pillar_id
+            JOIN controls c ON c.requirement_id = r.id
+            WHERE r.code = ANY(:codes)
+        """), {"codes": codes})).mappings().all()
+        for r in rows:
+            related.append({
+                "id": str(r["id"]),
+                "code": r["code"],
+                "title": r["title"],
+                "pillar_id": r["pillar_id"],
+                "pillar_name": r["pillar_name"],
+                "status": r["status"],
+                "reason": reason_by_code.get(r["code"], ""),
+            })
+    result["related"] = related
     return result

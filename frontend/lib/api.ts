@@ -25,6 +25,7 @@ export interface RequirementSummary {
   control_description: string | null;
   last_reviewed: string | null;
   next_review_due: string | null;
+  overdue: boolean;
   updated_at: string | null;
   updated_by: string | null;
   evidence_count: number;
@@ -42,12 +43,16 @@ export interface Pillar {
   requirement_count: number;
   status_breakdown: Record<Status, number>;
   open_gaps: number;
+  next_review_due: string | null;
+  overdue_count: number;
   requirements: RequirementSummary[];
 }
 
 export interface Framework {
   overall_score: number;
   overall_band: string;
+  next_review_due: string | null;
+  overdue_count: number;
   pillars: Pillar[];
 }
 
@@ -60,6 +65,17 @@ export interface Evidence {
   dated: string | null;
   added_by: string | null;
   created_at: string;
+  is_file?: boolean;
+  original_filename?: string | null;
+  content_type?: string | null;
+  size_bytes?: number | null;
+}
+
+export interface Member {
+  id: string;
+  name: string;
+  email: string | null;
+  role: string | null;
 }
 
 export interface Gap {
@@ -83,8 +99,10 @@ export interface RequirementDetail extends RequirementSummary {
   pillar_id: string;
   pillar_name: string;
   principle: string;
+  template: string | null;
   evidence: Evidence[];
   gaps: Gap[];
+  related: { id: string; code: string; title: string; pillar_id: string; pillar_name: string; status: Status; reason: string }[];
 }
 
 export interface AuditEntry {
@@ -98,10 +116,35 @@ export interface AuditEntry {
   created_at: string;
 }
 
+// ── Actor (audit identity) ────────────────────────────────────────────────────
+// Every action is attributed to a named actor. Set from the auth session at app
+// load (IdentitySync → setActor), kept in memory so it's available synchronously,
+// and mirrored to localStorage so it survives reloads.
+const ACTOR_KEY = "eigg_actor";
+let _actor: string | null = null;
+
+export function setActor(name: string) {
+  _actor = name;
+  if (typeof window !== "undefined") localStorage.setItem(ACTOR_KEY, name);
+}
+
+function currentActor(): string | null {
+  if (_actor) return _actor;
+  if (typeof window !== "undefined") return localStorage.getItem(ACTOR_KEY);
+  return null;
+}
+
+function actorHeaders(): Record<string, string> {
+  const actor = currentActor();
+  return actor ? { "x-actor": actor } : {};
+}
+
 // ── Reads (server components) ─────────────────────────────────────────────────
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { cache: "no-store" });
+  // actorHeaders is a no-op server-side (no window / in-memory actor); client
+  // reads that trigger audited side effects (e.g. pack export) carry the actor.
+  const res = await fetch(`${BASE}${path}`, { cache: "no-store", headers: actorHeaders() });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
   return res.json() as Promise<T>;
 }
@@ -149,15 +192,11 @@ export interface Pack {
   pillars: (Omit<Pillar, "requirements"> & { requirements: (RequirementSummary & { evidence: Evidence[] })[] })[];
   open_gaps: { severity: string; title: string; detail: string; recommendation: string | null; pillar_id: string | null; requirement_code: string | null }[];
   offence: { name: string; act: string; in_force: string; defence: string };
+  integrity_hash: string;
 }
 export const fetchPack = () => get<Pack>("/pack");
 
 // ── Writes (client) ───────────────────────────────────────────────────────────
-
-function actorHeaders(): Record<string, string> {
-  const actor = typeof window !== "undefined" ? localStorage.getItem("eigg_actor") || "" : "";
-  return actor ? { "x-actor": actor } : {};
-}
 
 async function mutate(path: string, method: string, body?: unknown) {
   const res = await fetch(`${CLIENT_BASE}${path}`, {
@@ -181,6 +220,63 @@ export const addEvidence = (
   requirementId: string,
   body: { title: string; kind: string; reference?: string; description?: string; dated?: string }
 ) => mutate(`/evidence/${requirementId}`, "POST", body);
+
+export const evidenceFileUrl = (evidenceId: string) => `${CLIENT_BASE}/evidence/file/${evidenceId}`;
+
+export async function uploadEvidence(
+  requirementId: string,
+  file: File,
+  meta: { title?: string; description?: string; dated?: string } = {}
+) {
+  const fd = new FormData();
+  fd.append("file", file);
+  if (meta.title) fd.append("title", meta.title);
+  if (meta.description) fd.append("description", meta.description);
+  if (meta.dated) fd.append("dated", meta.dated);
+  const res = await fetch(`${CLIENT_BASE}/evidence/${requirementId}/upload`, {
+    method: "POST",
+    headers: { ...actorHeaders() }, // no Content-Type — browser sets multipart boundary
+    body: fd,
+  });
+  if (!res.ok) throw new Error((await res.text()) || "Upload failed");
+  return res.json();
+}
+
+// ── Workspace members ─────────────────────────────────────────────────────────
+export const fetchMembers = () => get<{ members: Member[] }>("/members").then((d) => d.members);
+export const addMember = (body: { name: string; role?: string; email?: string }) =>
+  mutate("/members", "POST", body);
+export const deleteMember = (id: string) => mutate(`/members/${id}`, "DELETE");
+
+// ── Board governance (hash-chained approvals) ─────────────────────────────────
+export interface Approval {
+  id: string;
+  seq: number;
+  title: string;
+  version: string;
+  summary: string | null;
+  author: string | null;
+  approved_by: string;
+  approved_at: string | null;
+  prev_hash: string;
+  hash: string;
+  created_at: string;
+  verified: boolean;
+}
+export interface ApprovalChain {
+  entries: Approval[];
+  chain_valid: boolean;
+  genesis: string;
+  count: number;
+}
+export const fetchApprovals = () => get<ApprovalChain>("/governance/approvals");
+export const addApproval = (body: {
+  title: string;
+  version: string;
+  summary?: string;
+  approved_by: string;
+  approved_at?: string;
+}) => mutate("/governance/approvals", "POST", body);
 
 export const deleteEvidence = (evidenceId: string) =>
   mutate(`/evidence/${evidenceId}`, "DELETE");

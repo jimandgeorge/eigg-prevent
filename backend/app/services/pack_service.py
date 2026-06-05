@@ -4,6 +4,8 @@ Assembles the whole framework, evidence, open gaps and the in-scope test into on
 structured document the frontend renders for the board / regulator / court. Generating
 a pack is itself an audited event.
 """
+import hashlib
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import text
@@ -61,17 +63,7 @@ async def build_pack(db: AsyncSession, actor: str | None = None) -> dict:
 
     generated_at = datetime.now(timezone.utc).isoformat()
 
-    await db.execute(text("""
-        INSERT INTO audit_log (entity_type, action, actor, summary, detail)
-        VALUES ('pack', 'exported', :actor, :summary, CAST(:detail AS jsonb))
-    """), {
-        "actor": actor or "system",
-        "summary": f"Evidence pack generated — overall readiness {fw['overall_score']}/100",
-        "detail": '{"overall_score": %s}' % fw["overall_score"],
-    })
-    await db.commit()
-
-    return {
+    pack = {
         "generated_at": generated_at,
         "generated_by": actor,
         "organisation": {
@@ -92,3 +84,23 @@ async def build_pack(db: AsyncSession, actor: str | None = None) -> dict:
             "defence": "Reasonable fraud prevention procedures (Home Office six principles)",
         },
     }
+
+    # Tamper-evidence: SHA-256 over a canonical serialization of the complete pack.
+    # Anyone can recompute it from the exported content to prove it is unaltered —
+    # same pattern as the PSR claim-pack decision hash in EIGG.
+    integrity_hash = hashlib.sha256(
+        json.dumps(pack, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()
+    pack["integrity_hash"] = integrity_hash
+
+    await db.execute(text("""
+        INSERT INTO audit_log (entity_type, action, actor, summary, detail)
+        VALUES ('pack', 'exported', :actor, :summary, CAST(:detail AS jsonb))
+    """), {
+        "actor": actor or "system",
+        "summary": f"Evidence pack generated — overall readiness {fw['overall_score']}/100",
+        "detail": json.dumps({"overall_score": fw["overall_score"], "integrity_hash": integrity_hash}),
+    })
+    await db.commit()
+
+    return pack

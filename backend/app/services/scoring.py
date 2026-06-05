@@ -24,14 +24,15 @@ def overall_score(pillars: list[dict]) -> float:
 
 
 def band(score: float) -> str:
-    if score >= 85:
-        return "Embedded"
-    if score >= 60:
+    # 0-30 Not started · 31-50 Developing · 51-70 Progressing · 71-85 Established · 86-100 Robust
+    if score >= 86:
+        return "Robust"
+    if score >= 71:
         return "Established"
-    if score >= 30:
+    if score >= 51:
+        return "Progressing"
+    if score >= 31:
         return "Developing"
-    if score > 0:
-        return "Initial"
     return "Not started"
 
 

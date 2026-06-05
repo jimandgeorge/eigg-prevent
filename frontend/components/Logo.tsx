@@ -1,19 +1,41 @@
-export default function Logo({ size = 28, className = "" }: { size?: number; className?: string }) {
-  // Shield + check — "prevention, evidenced". Pairs with EIGG's water-edge disc.
+"use client";
+
+import { useId } from "react";
+
+// EIGG mark: one complete circle, split by an off-centre gap into two zones —
+// a FILLED zone (the contained/decided part) and an OUTLINED zone (the open
+// boundary; the curved stroke reads as a shoreline). Both use currentColor, so
+// the mark adapts to any background via text-* / style. Shared with EIGG.
+export default function Logo({
+  size = 24,
+  className = "",
+}: {
+  size?: number;
+  className?: string;
+}) {
+  const id = useId();
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.6}
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      viewBox="0 0 512 512"
       className={className}
+      role="img"
+      aria-label="EIGG"
     >
-      <path d="M12 2.5l7.5 3v5.5c0 4.6-3.2 8.4-7.5 9.5-4.3-1.1-7.5-4.9-7.5-9.5V5.5l7.5-3z" />
-      <path d="M9 12l2.2 2.2L15.5 10" />
+      <clipPath id={id}>
+        <rect x="0" y="0" width="185" height="512" />
+      </clipPath>
+      {/* left zone — filled */}
+      <circle cx="256" cy="256" r="248" fill="currentColor" clipPath={`url(#${id})`} />
+      {/* right zone — outline only (water edge) */}
+      <path
+        d="M209 12.5 A248 248 0 1 1 209 499.5 Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="14"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

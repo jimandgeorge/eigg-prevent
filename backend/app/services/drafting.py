@@ -52,6 +52,26 @@ Evidence on record:
 
 Draft the control narrative."""
 
-    draft = await llm.complete(SYSTEM, user, provider=provider or llm.settings.llm_provider)
-    return {"draft": draft, "provider": provider or llm.settings.llm_provider,
-            "model": llm.model_name(provider)}
+    provider = provider or llm.settings.llm_provider
+    draft = _mock_draft(req, evidence) if provider == "mock" else await llm.complete(SYSTEM, user, provider=provider)
+    return {"draft": draft, "provider": provider, "model": llm.model_name(provider)}
+
+
+def _mock_draft(req, evidence) -> str:
+    """Requirement-specific draft for the mock provider (no API key needed).
+
+    Grounds the narrative in this requirement's title, owner and recorded evidence
+    rather than emitting a generic stub.
+    """
+    owner = req["owner"] or "the designated control owner"
+    basis = (req["guidance"] or req["description"] or "").rstrip(".")
+    if evidence:
+        ev = "; ".join(e["title"] for e in evidence)
+        ev_sentence = f" This is evidenced by {ev}."
+    else:
+        ev_sentence = " Supporting evidence should be attached to demonstrate the control operates in practice."
+    return (
+        f"{req['title']} is owned by {owner}. {basis}."
+        f"{ev_sentence} The control is reviewed on a defined cadence and its operation recorded "
+        f"so the organisation can evidence reasonable procedures for {req['code']}."
+    )
