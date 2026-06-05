@@ -3,7 +3,7 @@ import "./globals.css";
 import Providers from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "EIGG Prevent",
+  title: "EIGG PREVENT",
   description: "Evidence your reasonable procedures under ECCTA 2023. AI gap analysis, board governance, one-click evidence pack.",
 };
 
