@@ -77,6 +77,16 @@ function Account() {
         </span>
         <span className="flex-1 text-[12px] text-zinc-600 truncate" title={name}>{name}</span>
       </div>
+      {session.user.is_admin && (
+        <Link
+          href="/admin"
+          className="flex items-center gap-2 px-2 py-1.5 rounded text-[13px] text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100 transition-colors"
+        >
+          <Icon path="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z" />
+          <span className="flex-1">Admin</span>
+          <span className="text-[9px] font-semibold tracking-widest text-zinc-400">INTERNAL</span>
+        </Link>
+      )}
       <button
         onClick={() => signOut({ callbackUrl: "/login" })}
         className="flex w-full items-center gap-2 px-2 py-1.5 rounded text-[13px] text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100 transition-colors"
