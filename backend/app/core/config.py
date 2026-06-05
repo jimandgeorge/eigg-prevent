@@ -28,5 +28,15 @@ class Settings(BaseSettings):
     ollama_base_url: str | None = None
     ollama_model: str = "llama3.1:70b"
 
+    # Admin / platform
+    app_base_url: str = "http://localhost:3001"   # used to build invite links
+    internal_api_secret: str = "dev-internal-secret-change-me"  # gates backend admin/auth endpoints
+    admin_email: str | None = None                # seeded platform super-admin
+    admin_password: str | None = None
+
+    # Email (invites). If resend_api_key is unset, invites are stubbed (link logged).
+    resend_api_key: str | None = None
+    email_from: str = "EIGG <noreply@eigg.co.uk>"
+
 
 settings = Settings()

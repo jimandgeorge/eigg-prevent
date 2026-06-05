@@ -24,6 +24,64 @@ CREATE TABLE IF NOT EXISTS org_profile (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ── Platform admin: workspaces registry, user accounts, invites, audit ───────
+-- NOTE: this is a registry/control-plane layer. The single-tenant framework data
+-- (org_profile, controls, ...) is not yet partitioned by workspace_id.
+CREATE TABLE IF NOT EXISTS workspaces (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name            TEXT NOT NULL,
+    org_type        TEXT,
+    tier            TEXT NOT NULL DEFAULT 'free',      -- free | starter | growth | scale | enterprise
+    products        TEXT[] NOT NULL DEFAULT '{}',      -- investigate | prevent
+    is_pilot        BOOLEAN NOT NULL DEFAULT FALSE,
+    pilot_ends_at   TIMESTAMPTZ,
+    status          TEXT NOT NULL DEFAULT 'active',     -- active | suspended
+    internal_notes  TEXT,
+    created_by      UUID,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_active_at  TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id    UUID REFERENCES workspaces(id),
+    email           TEXT UNIQUE NOT NULL,
+    name            TEXT,
+    password_hash   TEXT,
+    role            TEXT NOT NULL DEFAULT 'admin',      -- admin | analyst | viewer (workspace role)
+    is_admin        BOOLEAN NOT NULL DEFAULT FALSE,     -- platform super-admin (can access /admin)
+    status          TEXT NOT NULL DEFAULT 'invited',    -- invited | active | suspended
+    last_login_at   TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS invites (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id    UUID NOT NULL REFERENCES workspaces(id),
+    email           TEXT NOT NULL,
+    role            TEXT NOT NULL DEFAULT 'admin',
+    token           TEXT NOT NULL UNIQUE,
+    invited_by      UUID,
+    status          TEXT NOT NULL DEFAULT 'pending',    -- pending | accepted | expired
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at      TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '72 hours',
+    accepted_at     TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    admin_id        UUID,
+    action          TEXT NOT NULL,
+    target_type     TEXT,                               -- workspace | user | invite
+    target_id       UUID,
+    metadata        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_workspace ON users (workspace_id);
+CREATE INDEX IF NOT EXISTS idx_invites_status ON invites (status);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log (created_at DESC);
+
 -- ── Workspace members (control owners, approvers, training/DD subjects) ──────
 CREATE TABLE IF NOT EXISTS workspace_members (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -22,5 +22,6 @@ export default withAuth(
 );
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|favicon.svg|icon.svg|api/auth).*)"],
+  // /invite/[token] is public (token-gated); /api/auth and static assets are public too.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|favicon.svg|icon.svg|api/auth|invite).*)"],
 };

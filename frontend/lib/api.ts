@@ -303,6 +303,29 @@ export const generateOnboarding = (profile: OnboardingProfile) =>
 export const commitOnboarding = (profile: OnboardingProfile, items: { code: string; status: string; narrative?: string; owner?: string }[]) =>
   mutate("/onboarding/commit", "POST", { profile, items });
 
+// ── Invite acceptance (public, token-gated) ───────────────────────────────────
+export interface InviteInfo {
+  valid: boolean;
+  reason?: string;
+  email?: string;
+  org?: string;
+  role?: string;
+}
+export async function getInvite(token: string): Promise<InviteInfo> {
+  const res = await fetch(`${CLIENT_BASE}/invite/${token}`, { cache: "no-store" });
+  if (!res.ok) return { valid: false, reason: "not_found" };
+  return res.json();
+}
+export async function acceptInvite(token: string, password: string, name?: string) {
+  const res = await fetch(`${CLIENT_BASE}/invite/${token}/accept`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password, name }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "Could not accept invite");
+  return res.json() as Promise<{ email: string; first_user: boolean }>;
+}
+
 export const fetchApprovals = () => get<ApprovalChain>("/governance/approvals");
 export const addApproval = (body: {
   title: string;

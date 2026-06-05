@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api import audit, controls, evidence, framework, gaps, governance, members, onboarding, pack, settings as settings_api
+from app.api import admin, audit, auth, controls, evidence, framework, gaps, governance, members, onboarding, pack, settings as settings_api
 from app.core.config import settings
 from app.core.database import engine
 
@@ -86,6 +86,59 @@ async def lifespan(_app):
                 BEFORE UPDATE OR DELETE ON policy_versions
                 FOR EACH ROW EXECUTE FUNCTION block_audit_mutation()
         """))
+        # Platform admin registry (workspaces / users / invites / audit).
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS workspaces (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                name TEXT NOT NULL, org_type TEXT, tier TEXT NOT NULL DEFAULT 'free',
+                products TEXT[] NOT NULL DEFAULT '{}', is_pilot BOOLEAN NOT NULL DEFAULT FALSE,
+                pilot_ends_at TIMESTAMPTZ, status TEXT NOT NULL DEFAULT 'active',
+                internal_notes TEXT, created_by UUID,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), last_active_at TIMESTAMPTZ
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS users (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                workspace_id UUID REFERENCES workspaces(id),
+                email TEXT UNIQUE NOT NULL, name TEXT, password_hash TEXT,
+                role TEXT NOT NULL DEFAULT 'admin', is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+                status TEXT NOT NULL DEFAULT 'invited', last_login_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS invites (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                workspace_id UUID NOT NULL REFERENCES workspaces(id),
+                email TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'admin',
+                token TEXT NOT NULL UNIQUE, invited_by UUID,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '72 hours',
+                accepted_at TIMESTAMPTZ
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS admin_audit_log (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                admin_id UUID, action TEXT NOT NULL, target_type TEXT, target_id UUID,
+                metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+
+        # Seed the platform super-admin from env — the first-deploy backdoor into /admin.
+        if settings.admin_email and settings.admin_password:
+            from app.core.security import hash_password
+            exists = await conn.scalar(
+                text("SELECT 1 FROM users WHERE email = :e"), {"e": settings.admin_email.lower()})
+            if not exists:
+                await conn.execute(text("""
+                    INSERT INTO users (email, name, password_hash, role, is_admin, status)
+                    VALUES (:e, 'EIGG Admin', :ph, 'admin', TRUE, 'active')
+                """), {"e": settings.admin_email.lower(),
+                       "ph": hash_password(settings.admin_password)})
     yield
 
 
@@ -106,7 +159,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (framework, controls, evidence, gaps, governance, members, onboarding, pack, audit, settings_api):
+for r in (framework, controls, evidence, gaps, governance, members, onboarding, pack, audit,
+          settings_api, admin, auth):
     app.include_router(r.router, prefix=API_PREFIX)
 
 
