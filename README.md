@@ -34,7 +34,25 @@ failure to prevent fraud* six principles, so the framework doubles as the statut
 - **Defensible by design** — append-only audit trail; export a board-ready "reasonable procedures" pack
 - **Self-contained** — runs on the customer's infrastructure; data never leaves
 
-## Quick start
+## Self-hosting (production)
+
+Run EIGG Prevent on your own infrastructure from the published images — no source
+checkout, no build. Everything (database included) runs in Docker; your data never leaves
+your servers.
+
+```bash
+cd deploy
+cp .env.example .env      # set PUBLIC_URL, secrets, admin credentials
+docker compose pull
+docker compose up -d
+```
+
+Images are published to GitHub Container Registry
+(`ghcr.io/jimandgeorge/eigg-prevent-{backend,frontend}`). Full steps — access tokens, TLS,
+AI provider options (mock / on-prem Ollama / Anthropic), updates and backups — in
+**[`deploy/INSTALL.md`](deploy/INSTALL.md)**.
+
+## Quick start (development)
 
 ```bash
 # 1. Database (local Postgres via Docker, or point at your own)
