@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.tenant import current_workspace
 from app.models.schemas import EvidenceCreate
 
 router = APIRouter(prefix="/evidence", tags=["evidence"])
@@ -28,6 +29,7 @@ async def upload_evidence(
     description: str | None = Form(default=None),
     dated: str | None = Form(default=None),
     db: AsyncSession = Depends(get_db),
+    wid: str = Depends(current_workspace),
     x_actor: str | None = Header(default=None),
 ):
     """Primary evidence path: upload the actual document. Regulators want the file,
@@ -45,12 +47,13 @@ async def upload_evidence(
 
     new_id = (await db.execute(text("""
         INSERT INTO evidence_items
-            (requirement_id, title, kind, description, dated,
+            (workspace_id, requirement_id, title, kind, description, dated,
              stored_path, original_filename, content_type, size_bytes, added_by)
-        VALUES (:rid, :title, 'file', :description, :dated,
+        VALUES (:wid, :rid, :title, 'file', :description, :dated,
                 :stored, :orig, :ctype, :size, :actor)
         RETURNING id
     """), {
+        "wid": wid,
         "rid": requirement_id,
         "title": (title or file.filename or "Uploaded file").strip(),
         "description": description,
@@ -63,9 +66,9 @@ async def upload_evidence(
     })).scalar()
 
     await db.execute(text("""
-        INSERT INTO audit_log (entity_type, entity_id, action, actor, summary)
-        VALUES ('evidence', :eid, 'uploaded', :actor, :summary)
-    """), {"eid": str(new_id), "actor": x_actor or "unknown",
+        INSERT INTO audit_log (workspace_id, entity_type, entity_id, action, actor, summary)
+        VALUES (:wid, 'evidence', :eid, 'uploaded', :actor, :summary)
+    """), {"wid": wid, "eid": str(new_id), "actor": x_actor or "unknown",
            "summary": f"{code}: file uploaded — {file.filename}"})
     await db.commit()
     return {"id": str(new_id)}
@@ -76,6 +79,7 @@ async def add_evidence(
     requirement_id: str,
     body: EvidenceCreate,
     db: AsyncSession = Depends(get_db),
+    wid: str = Depends(current_workspace),
     x_actor: str | None = Header(default=None),
 ):
     """Secondary evidence path: a link / reference to where the document lives."""
@@ -84,29 +88,31 @@ async def add_evidence(
         raise HTTPException(404, "Requirement not found")
 
     new_id = (await db.execute(text("""
-        INSERT INTO evidence_items (requirement_id, title, kind, reference, description, dated, added_by)
-        VALUES (:rid, :title, :kind, :reference, :description, :dated, :actor)
+        INSERT INTO evidence_items (workspace_id, requirement_id, title, kind, reference, description, dated, added_by)
+        VALUES (:wid, :rid, :title, :kind, :reference, :description, :dated, :actor)
         RETURNING id
     """), {
-        "rid": requirement_id, "title": body.title, "kind": body.kind,
+        "wid": wid, "rid": requirement_id, "title": body.title, "kind": body.kind,
         "reference": body.reference, "description": body.description,
         "dated": body.dated, "actor": x_actor or "unknown",
     })).scalar()
 
     await db.execute(text("""
-        INSERT INTO audit_log (entity_type, entity_id, action, actor, summary)
-        VALUES ('evidence', :eid, 'created', :actor, :summary)
-    """), {"eid": str(new_id), "actor": x_actor or "unknown",
+        INSERT INTO audit_log (workspace_id, entity_type, entity_id, action, actor, summary)
+        VALUES (:wid, 'evidence', :eid, 'created', :actor, :summary)
+    """), {"wid": wid, "eid": str(new_id), "actor": x_actor or "unknown",
            "summary": f"{code}: evidence linked — {body.title}"})
     await db.commit()
     return {"id": str(new_id)}
 
 
 @router.get("/file/{evidence_id}")
-async def download_evidence(evidence_id: str, db: AsyncSession = Depends(get_db)):
+async def download_evidence(evidence_id: str, db: AsyncSession = Depends(get_db),
+                            wid: str = Depends(current_workspace)):
     row = (await db.execute(text(
-        "SELECT stored_path, original_filename, content_type FROM evidence_items WHERE id = :eid"
-    ), {"eid": evidence_id})).mappings().first()
+        "SELECT stored_path, original_filename, content_type FROM evidence_items "
+        "WHERE id = :eid AND workspace_id = :wid"
+    ), {"eid": evidence_id, "wid": wid})).mappings().first()
     if not row or not row["stored_path"]:
         raise HTTPException(404, "File not found")
     path = UPLOAD_DIR / row["stored_path"]
@@ -123,13 +129,16 @@ async def download_evidence(evidence_id: str, db: AsyncSession = Depends(get_db)
 async def delete_evidence(
     evidence_id: str,
     db: AsyncSession = Depends(get_db),
+    wid: str = Depends(current_workspace),
     x_actor: str | None = Header(default=None),
 ):
     row = (await db.execute(text(
-        "SELECT title, stored_path FROM evidence_items WHERE id = :eid"), {"eid": evidence_id})).mappings().first()
+        "SELECT title, stored_path FROM evidence_items WHERE id = :eid AND workspace_id = :wid"
+    ), {"eid": evidence_id, "wid": wid})).mappings().first()
     if not row:
         raise HTTPException(404, "Evidence not found")
-    await db.execute(text("DELETE FROM evidence_items WHERE id = :eid"), {"eid": evidence_id})
+    await db.execute(text("DELETE FROM evidence_items WHERE id = :eid AND workspace_id = :wid"),
+                     {"eid": evidence_id, "wid": wid})
     # Best-effort remove the stored file.
     if row["stored_path"]:
         try:
@@ -137,9 +146,9 @@ async def delete_evidence(
         except OSError:
             pass
     await db.execute(text("""
-        INSERT INTO audit_log (entity_type, entity_id, action, actor, summary)
-        VALUES ('evidence', :eid, 'deleted', :actor, :summary)
-    """), {"eid": evidence_id, "actor": x_actor or "unknown",
+        INSERT INTO audit_log (workspace_id, entity_type, entity_id, action, actor, summary)
+        VALUES (:wid, 'evidence', :eid, 'deleted', :actor, :summary)
+    """), {"wid": wid, "eid": evidence_id, "actor": x_actor or "unknown",
            "summary": f"Evidence removed — {row['title']}"})
     await db.commit()
     return {"ok": True}

@@ -1,4 +1,4 @@
-import { fetchAudit } from "@/lib/api";
+import { fetchAudit } from "@/lib/server-api";
 
 export const dynamic = "force-dynamic";
 

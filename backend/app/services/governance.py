@@ -29,12 +29,12 @@ def _fields(row: dict) -> dict:
     }
 
 
-async def list_chain(db: AsyncSession) -> dict:
+async def list_chain(db: AsyncSession, workspace_id: str) -> dict:
     rows = (await db.execute(text("""
         SELECT id, seq, title, version, summary, author, approved_by, approved_at,
                prev_hash, hash, created_at
-        FROM policy_versions ORDER BY seq
-    """))).mappings().all()
+        FROM policy_versions WHERE workspace_id = :wid ORDER BY seq
+    """), {"wid": workspace_id})).mappings().all()
 
     entries = []
     expected_prev = GENESIS
@@ -65,11 +65,11 @@ async def list_chain(db: AsyncSession) -> dict:
     return {"entries": entries, "chain_valid": chain_valid, "genesis": GENESIS, "count": len(entries)}
 
 
-async def add_entry(db: AsyncSession, *, title: str, version: str, summary: str | None,
-                    approved_by: str, approved_at, author: str | None) -> dict:
+async def add_entry(db: AsyncSession, workspace_id: str, *, title: str, version: str,
+                    summary: str | None, approved_by: str, approved_at, author: str | None) -> dict:
     prev_hash = (await db.execute(text(
-        "SELECT hash FROM policy_versions ORDER BY seq DESC LIMIT 1"
-    ))).scalar() or GENESIS
+        "SELECT hash FROM policy_versions WHERE workspace_id = :wid ORDER BY seq DESC LIMIT 1"
+    ), {"wid": workspace_id})).scalar() or GENESIS
 
     fields = {
         "title": title,
@@ -81,18 +81,20 @@ async def add_entry(db: AsyncSession, *, title: str, version: str, summary: str 
     h = _entry_hash(prev_hash, fields)
 
     new_id = (await db.execute(text("""
-        INSERT INTO policy_versions (title, version, summary, author, approved_by, approved_at, prev_hash, hash)
-        VALUES (:title, :version, :summary, :author, :approved_by, :approved_at, :prev_hash, :hash)
+        INSERT INTO policy_versions (workspace_id, title, version, summary, author, approved_by, approved_at, prev_hash, hash)
+        VALUES (:wid, :title, :version, :summary, :author, :approved_by, :approved_at, :prev_hash, :hash)
         RETURNING id
     """), {
+        "wid": workspace_id,
         "title": title, "version": version, "summary": summary, "author": author,
         "approved_by": approved_by, "approved_at": approved_at, "prev_hash": prev_hash, "hash": h,
     })).scalar()
 
     await db.execute(text("""
-        INSERT INTO audit_log (entity_type, entity_id, action, actor, summary, detail)
-        VALUES ('policy', :pid, 'approved', :actor, :summary, CAST(:detail AS jsonb))
+        INSERT INTO audit_log (workspace_id, entity_type, entity_id, action, actor, summary, detail)
+        VALUES (:wid, 'policy', :pid, 'approved', :actor, :summary, CAST(:detail AS jsonb))
     """), {
+        "wid": workspace_id,
         "pid": str(new_id), "actor": author or "unknown",
         "summary": f"Policy approved — {title} {version} (by {approved_by})",
         "detail": json.dumps({"hash": h}),

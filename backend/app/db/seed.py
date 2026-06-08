@@ -17,6 +17,7 @@ from pathlib import Path
 import asyncpg
 
 from app.core.config import settings
+from app.core.tenant import DEFAULT_WORKSPACE_ID
 from app.db.framework import PILLARS, REQUIREMENTS
 
 # Mirror of app.services.governance hashing so seeded chains verify.
@@ -148,9 +149,6 @@ async def seed(demo: bool = False):
         print("-> applying schema...")
         await conn.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
 
-        print("-> ensuring org profile...")
-        await conn.execute("INSERT INTO org_profile (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
-
         print("-> seeding pillars...")
         for order, (pid, name, principle, weight, desc) in enumerate(PILLARS):
             await conn.execute(
@@ -163,29 +161,23 @@ async def seed(demo: bool = False):
                 pid, name, principle, desc, weight, order,
             )
 
-        print("-> seeding requirements + control rows...")
+        print("-> seeding requirements...")
         for pid, reqs in REQUIREMENTS.items():
             for order, (code, title, desc, guidance) in enumerate(reqs):
-                req_id = await conn.fetchval(
+                await conn.execute(
                     """
                     INSERT INTO requirements (pillar_id, code, title, description, guidance, sort_order)
                     VALUES ($1,$2,$3,$4,$5,$6)
                     ON CONFLICT (code) DO UPDATE SET
                         pillar_id=$1, title=$3, description=$4, guidance=$5, sort_order=$6
-                    RETURNING id
                     """,
                     pid, code, title, desc, guidance, order,
                 )
-                await conn.execute(
-                    """
-                    INSERT INTO controls (requirement_id, status)
-                    VALUES ($1, 'not_started')
-                    ON CONFLICT (requirement_id) DO NOTHING
-                    """,
-                    req_id,
-                )
+        # Controls are per-workspace now (created by onboarding / ensure_controls),
+        # not seeded globally.
 
         if demo:
+            await _ensure_tenancy(conn)
             await _seed_demo(conn)
 
         print("[ok] seed complete")
@@ -193,24 +185,63 @@ async def seed(demo: bool = False):
         await conn.close()
 
 
+async def _ensure_tenancy(conn):
+    """Idempotent tenancy setup so `seed --demo` is self-contained (doesn't depend on the
+    app lifespan having run). Mirrors the migration in app/main.py."""
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS workspaces (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT NOT NULL,
+            org_type TEXT, tier TEXT NOT NULL DEFAULT 'free', products TEXT[] NOT NULL DEFAULT '{}',
+            is_pilot BOOLEAN NOT NULL DEFAULT FALSE, pilot_ends_at TIMESTAMPTZ,
+            status TEXT NOT NULL DEFAULT 'active', internal_notes TEXT, created_by UUID,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), last_active_at TIMESTAMPTZ)
+    """)
+    await conn.execute(
+        "INSERT INTO workspaces (id, name, tier, products, status) "
+        "VALUES ($1,'Default workspace','free',ARRAY['prevent'],'active') ON CONFLICT (id) DO NOTHING",
+        DEFAULT_WORKSPACE_ID)
+    for tbl in ("controls", "evidence_items", "gap_findings", "workspace_members",
+                "policy_versions", "audit_log", "org_profile"):
+        await conn.execute(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS workspace_id UUID")
+    await conn.execute("ALTER TABLE org_profile DROP CONSTRAINT IF EXISTS org_profile_id_check")
+    await conn.execute("ALTER TABLE org_profile DROP CONSTRAINT IF EXISTS org_profile_pkey")
+    await conn.execute("ALTER TABLE org_profile ALTER COLUMN id DROP NOT NULL")
+    await conn.execute("ALTER TABLE org_profile ALTER COLUMN id DROP DEFAULT")
+    await conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS org_profile_ws_uq ON org_profile (workspace_id)")
+    await conn.execute("ALTER TABLE controls DROP CONSTRAINT IF EXISTS controls_requirement_id_key")
+    await conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS controls_ws_req_uq ON controls (workspace_id, requirement_id)")
+    # Control rows + profile for the default workspace (where demo data lives).
+    await conn.execute("""
+        INSERT INTO controls (workspace_id, requirement_id, status)
+        SELECT $1, r.id, 'not_started' FROM requirements r
+        WHERE NOT EXISTS (SELECT 1 FROM controls c WHERE c.workspace_id=$1 AND c.requirement_id=r.id)
+    """, DEFAULT_WORKSPACE_ID)
+    await conn.execute(
+        "INSERT INTO org_profile (workspace_id) VALUES ($1) ON CONFLICT (workspace_id) DO NOTHING",
+        DEFAULT_WORKSPACE_ID)
+
+
 async def _seed_demo(conn):
     print("-> resetting + seeding demo state...")
     # Clean slate for demo so reseeding never duplicates (TRUNCATE bypasses the
     # audit_log append-only row trigger; safe for a dev/demo reset only).
+    # Demo data lives in the default workspace. TRUNCATE the append-only tables (their
+    # row triggers block DELETE); scope the rest to the default workspace.
     await conn.execute("TRUNCATE audit_log")
     await conn.execute("TRUNCATE policy_versions")
-    await conn.execute("DELETE FROM evidence_items")
-    await conn.execute("DELETE FROM gap_findings")
-    await conn.execute("DELETE FROM workspace_members")
+    await conn.execute("DELETE FROM evidence_items WHERE workspace_id = $1", DEFAULT_WORKSPACE_ID)
+    await conn.execute("DELETE FROM gap_findings WHERE workspace_id = $1", DEFAULT_WORKSPACE_ID)
+    await conn.execute("DELETE FROM workspace_members WHERE workspace_id = $1", DEFAULT_WORKSPACE_ID)
     await conn.execute(
         "UPDATE controls SET status='not_started', owner=NULL, description=NULL, "
-        "last_reviewed=NULL, next_review_due=NULL, updated_by=NULL"
+        "last_reviewed=NULL, next_review_due=NULL, updated_by=NULL WHERE workspace_id = $1",
+        DEFAULT_WORKSPACE_ID,
     )
 
     for name, role, email in MEMBERS:
         await conn.execute(
-            "INSERT INTO workspace_members (name, role, email) VALUES ($1,$2,$3)",
-            name, role, email,
+            "INSERT INTO workspace_members (workspace_id, name, role, email) VALUES ($1,$2,$3,$4)",
+            DEFAULT_WORKSPACE_ID, name, role, email,
         )
 
     code_to_req = {r["code"]: r["id"] for r in await conn.fetch("SELECT id, code FROM requirements")}
@@ -231,9 +262,9 @@ async def _seed_demo(conn):
                     WHEN $5 = 'next_overdue' THEN CURRENT_DATE - INTERVAL '3 weeks'
                     ELSE CURRENT_DATE + INTERVAL '1 month' END,
                 updated_by='Priya Shah', updated_at=NOW()
-            WHERE requirement_id=$1
+            WHERE requirement_id=$1 AND workspace_id=$6
             """,
-            rid, status, owner, desc, next_due,
+            rid, status, owner, desc, next_due, DEFAULT_WORKSPACE_ID,
         )
 
     for code, items in DEMO_EVIDENCE.items():
@@ -243,10 +274,10 @@ async def _seed_demo(conn):
         for title, kind, ref, dated in items:
             await conn.execute(
                 """
-                INSERT INTO evidence_items (requirement_id, title, kind, reference, dated, added_by)
-                VALUES ($1,$2,$3,$4,$5,'Sarah Bennett')
+                INSERT INTO evidence_items (workspace_id, requirement_id, title, kind, reference, dated, added_by)
+                VALUES ($1,$2,$3,$4,$5,$6,'Sarah Bennett')
                 """,
-                rid, title, kind, ref, date.fromisoformat(dated),
+                DEFAULT_WORKSPACE_ID, rid, title, kind, ref, date.fromisoformat(dated),
             )
 
     for pillar_id, code, severity, status, title, detail, rec in DEMO_GAPS:
@@ -254,10 +285,10 @@ async def _seed_demo(conn):
         source = "ai" if status == "open" else "manual"
         await conn.execute(
             """
-            INSERT INTO gap_findings (pillar_id, requirement_id, severity, title, detail, recommendation, status, source)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+            INSERT INTO gap_findings (workspace_id, pillar_id, requirement_id, severity, title, detail, recommendation, status, source)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
             """,
-            pillar_id, rid, severity, title, detail, rec, status, source,
+            DEFAULT_WORKSPACE_ID, pillar_id, rid, severity, title, detail, rec, status, source,
         )
 
     prev = _GOV_GENESIS
@@ -265,17 +296,17 @@ async def _seed_demo(conn):
         h = _gov_hash(prev, title, version, summary, approved_by, approved_at)
         await conn.execute(
             """
-            INSERT INTO policy_versions (title, version, summary, author, approved_by, approved_at, prev_hash, hash)
-            VALUES ($1,$2,$3,'Priya Shah',$4,$5,$6,$7)
+            INSERT INTO policy_versions (workspace_id, title, version, summary, author, approved_by, approved_at, prev_hash, hash)
+            VALUES ($1,$2,$3,$4,'Priya Shah',$5,$6,$7,$8)
             """,
-            title, version, summary, approved_by, approved_at, prev, h,
+            DEFAULT_WORKSPACE_ID, title, version, summary, approved_by, approved_at, prev, h,
         )
         prev = h
 
     for entity_type, action, actor, summary in DEMO_AUDIT:
         await conn.execute(
-            "INSERT INTO audit_log (entity_type, action, actor, summary) VALUES ($1,$2,$3,$4)",
-            entity_type, action, actor, summary,
+            "INSERT INTO audit_log (workspace_id, entity_type, action, actor, summary) VALUES ($1,$2,$3,$4,$5)",
+            DEFAULT_WORKSPACE_ID, entity_type, action, actor, summary,
         )
 
 

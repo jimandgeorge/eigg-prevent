@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import Sidebar from "@/components/Sidebar";
 import IdentitySync from "@/components/IdentitySync";
 import FaviconUpdater from "@/components/FaviconUpdater";
-import { fetchOnboardingStatus } from "@/lib/api";
+import { fetchOnboardingStatus } from "@/lib/server-api";
 import { authOptions } from "@/lib/auth";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {

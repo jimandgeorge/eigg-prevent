@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { fetchFramework, fetchGaps } from "@/lib/api";
+import { fetchFramework, fetchGaps } from "@/lib/server-api";
 import { ReadinessRing, ReviewBadge, ScoreBar, SeverityPill, scoreColor } from "@/components/ui";
 import GettingStarted from "@/components/GettingStarted";
 

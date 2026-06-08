@@ -3,16 +3,18 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.tenant import current_workspace
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
 
 @router.get("")
-async def get_audit(limit: int = 100, db: AsyncSession = Depends(get_db)):
+async def get_audit(limit: int = 100, db: AsyncSession = Depends(get_db),
+                    wid: str = Depends(current_workspace)):
     rows = (await db.execute(text("""
         SELECT id, entity_type, entity_id, action, actor, summary, detail, created_at
-        FROM audit_log ORDER BY created_at DESC LIMIT :limit
-    """), {"limit": min(limit, 500)})).mappings().all()
+        FROM audit_log WHERE workspace_id = :wid ORDER BY created_at DESC LIMIT :limit
+    """), {"limit": min(limit, 500), "wid": wid})).mappings().all()
     entries = []
     for r in rows:
         d = dict(r)

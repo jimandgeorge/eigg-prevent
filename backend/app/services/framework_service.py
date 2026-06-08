@@ -12,9 +12,24 @@ def _is_overdue(due) -> bool:
     return bool(due) and due < date.today()
 
 
-async def load_framework(db: AsyncSession) -> dict:
-    """Return the full nested framework: pillars -> requirements -> control + evidence count,
-    with readiness scores computed at every level."""
+async def ensure_controls(db: AsyncSession, workspace_id: str) -> None:
+    """Guarantee a control row exists for every requirement in this workspace.
+    Idempotent — a workspace's controls start at not_started until edited/onboarded."""
+    await db.execute(text("""
+        INSERT INTO controls (workspace_id, requirement_id, status)
+        SELECT :wid, r.id, 'not_started' FROM requirements r
+        WHERE NOT EXISTS (
+            SELECT 1 FROM controls c WHERE c.workspace_id = :wid AND c.requirement_id = r.id
+        )
+    """), {"wid": workspace_id})
+    await db.commit()
+
+
+async def load_framework(db: AsyncSession, workspace_id: str) -> dict:
+    """Return the full nested framework for one workspace: pillars -> requirements ->
+    control + evidence count, with readiness scores computed at every level."""
+    await ensure_controls(db, workspace_id)
+
     pillars = (await db.execute(text(
         "SELECT id, name, principle, description, weight, sort_order "
         "FROM pillars ORDER BY sort_order"
@@ -24,15 +39,17 @@ async def load_framework(db: AsyncSession) -> dict:
         SELECT r.id, r.pillar_id, r.code, r.title, r.description, r.guidance, r.sort_order,
                c.status, c.owner, c.description AS control_description,
                c.last_reviewed, c.next_review_due, c.updated_at, c.updated_by,
-               (SELECT COUNT(*) FROM evidence_items e WHERE e.requirement_id = r.id) AS evidence_count
+               (SELECT COUNT(*) FROM evidence_items e
+                WHERE e.requirement_id = r.id AND e.workspace_id = :wid) AS evidence_count
         FROM requirements r
-        JOIN controls c ON c.requirement_id = r.id
+        JOIN controls c ON c.requirement_id = r.id AND c.workspace_id = :wid
         ORDER BY r.pillar_id, r.sort_order
-    """))).mappings().all()
+    """), {"wid": workspace_id})).mappings().all()
 
     open_gaps = (await db.execute(text(
-        "SELECT requirement_id, pillar_id, severity FROM gap_findings WHERE status = 'open'"
-    ))).mappings().all()
+        "SELECT requirement_id, pillar_id, severity FROM gap_findings "
+        "WHERE status = 'open' AND workspace_id = :wid"
+    ), {"wid": workspace_id})).mappings().all()
     gaps_by_req: dict[str, int] = {}
     gaps_by_pillar: dict[str, int] = {}
     for g in open_gaps:

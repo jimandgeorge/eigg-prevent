@@ -5,20 +5,21 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.tenant import current_workspace
 from app.db.framework import CONTROL_TEMPLATES, related_codes
-from app.services.framework_service import load_framework
+from app.services.framework_service import ensure_controls, load_framework
 
 router = APIRouter(prefix="/framework", tags=["framework"])
 
 
 @router.get("")
-async def get_framework(db: AsyncSession = Depends(get_db)):
-    return await load_framework(db)
+async def get_framework(db: AsyncSession = Depends(get_db), wid: str = Depends(current_workspace)):
+    return await load_framework(db, wid)
 
 
 @router.get("/pillars/{pillar_id}")
-async def get_pillar(pillar_id: str, db: AsyncSession = Depends(get_db)):
-    fw = await load_framework(db)
+async def get_pillar(pillar_id: str, db: AsyncSession = Depends(get_db), wid: str = Depends(current_workspace)):
+    fw = await load_framework(db, wid)
     for p in fw["pillars"]:
         if p["id"] == pillar_id:
             return p
@@ -26,7 +27,9 @@ async def get_pillar(pillar_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/requirements/{requirement_id}")
-async def get_requirement(requirement_id: str, db: AsyncSession = Depends(get_db)):
+async def get_requirement(requirement_id: str, db: AsyncSession = Depends(get_db),
+                          wid: str = Depends(current_workspace)):
+    await ensure_controls(db, wid)
     req = (await db.execute(text("""
         SELECT r.id, r.code, r.title, r.description, r.guidance,
                r.pillar_id, p.name AS pillar_name, p.principle,
@@ -34,9 +37,9 @@ async def get_requirement(requirement_id: str, db: AsyncSession = Depends(get_db
                c.last_reviewed, c.next_review_due, c.updated_at, c.updated_by
         FROM requirements r
         JOIN pillars p ON p.id = r.pillar_id
-        JOIN controls c ON c.requirement_id = r.id
+        JOIN controls c ON c.requirement_id = r.id AND c.workspace_id = :wid
         WHERE r.id = :rid
-    """), {"rid": requirement_id})).mappings().first()
+    """), {"rid": requirement_id, "wid": wid})).mappings().first()
     if not req:
         raise HTTPException(404, "Requirement not found")
 
@@ -44,14 +47,14 @@ async def get_requirement(requirement_id: str, db: AsyncSession = Depends(get_db
         SELECT id, title, kind, reference, description, dated, added_by, created_at,
                original_filename, content_type, size_bytes,
                (stored_path IS NOT NULL) AS is_file
-        FROM evidence_items WHERE requirement_id = :rid ORDER BY created_at DESC
-    """), {"rid": requirement_id})).mappings().all()
+        FROM evidence_items WHERE requirement_id = :rid AND workspace_id = :wid ORDER BY created_at DESC
+    """), {"rid": requirement_id, "wid": wid})).mappings().all()
 
     gaps = (await db.execute(text("""
         SELECT id, severity, title, detail, recommendation, status, source, created_at
-        FROM gap_findings WHERE requirement_id = :rid AND status = 'open'
+        FROM gap_findings WHERE requirement_id = :rid AND workspace_id = :wid AND status = 'open'
         ORDER BY CASE severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END
-    """), {"rid": requirement_id})).mappings().all()
+    """), {"rid": requirement_id, "wid": wid})).mappings().all()
 
     def _ser(rows):
         out = []
@@ -84,9 +87,9 @@ async def get_requirement(requirement_id: str, db: AsyncSession = Depends(get_db
         rows = (await db.execute(text("""
             SELECT r.id, r.code, r.title, r.pillar_id, p.name AS pillar_name, c.status
             FROM requirements r JOIN pillars p ON p.id = r.pillar_id
-            JOIN controls c ON c.requirement_id = r.id
+            JOIN controls c ON c.requirement_id = r.id AND c.workspace_id = :wid
             WHERE r.code = ANY(:codes)
-        """), {"codes": codes})).mappings().all()
+        """), {"codes": codes, "wid": wid})).mappings().all()
         for r in rows:
             related.append({
                 "id": str(r["id"]),

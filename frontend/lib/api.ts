@@ -1,12 +1,9 @@
-// EIGG Prevent API client. Backend routes are namespaced under /api (see backend main.py).
-const API_PREFIX = "/api/v1";
-
-// Server-side (Docker) uses API_URL; the browser uses NEXT_PUBLIC_API_URL.
-const BASE =
-  (process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001") + API_PREFIX;
-
-export const CLIENT_BASE =
-  (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001") + API_PREFIX;
+// EIGG Prevent API client (browser). Tenant calls go through the same-origin proxy
+// /api/t, which injects the authenticated workspace (see app/api/t). Server components
+// read via lib/server-api.ts instead. Public, token-gated invite endpoints bypass the
+// tenant proxy and hit the backend's /api/v1 directly.
+export const CLIENT_BASE = "/api/t";
+const PUBLIC_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001") + "/api/v1";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -117,34 +114,20 @@ export interface AuditEntry {
 }
 
 // ── Actor (audit identity) ────────────────────────────────────────────────────
-// Every action is attributed to a named actor. Set from the auth session at app
-// load (IdentitySync → setActor), kept in memory so it's available synchronously,
-// and mirrored to localStorage so it survives reloads.
+// The audit actor is now derived server-side from the session by the /api/t proxy,
+// so the client no longer sends it. setActor is retained as a harmless no-op-ish
+// helper (kept for callers; writes localStorage only).
 const ACTOR_KEY = "eigg_actor";
-let _actor: string | null = null;
 
 export function setActor(name: string) {
-  _actor = name;
   if (typeof window !== "undefined") localStorage.setItem(ACTOR_KEY, name);
 }
 
-function currentActor(): string | null {
-  if (_actor) return _actor;
-  if (typeof window !== "undefined") return localStorage.getItem(ACTOR_KEY);
-  return null;
-}
-
-function actorHeaders(): Record<string, string> {
-  const actor = currentActor();
-  return actor ? { "x-actor": actor } : {};
-}
-
-// ── Reads (server components) ─────────────────────────────────────────────────
+// ── Reads (via the /api/t proxy) ──────────────────────────────────────────────
 
 async function get<T>(path: string): Promise<T> {
-  // actorHeaders is a no-op server-side (no window / in-memory actor); client
-  // reads that trigger audited side effects (e.g. pack export) carry the actor.
-  const res = await fetch(`${BASE}${path}`, { cache: "no-store", headers: actorHeaders() });
+  // Through the /api/t proxy, which injects the workspace + actor from the session.
+  const res = await fetch(`${CLIENT_BASE}${path}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
   return res.json() as Promise<T>;
 }
@@ -201,7 +184,7 @@ export const fetchPack = () => get<Pack>("/pack");
 async function mutate(path: string, method: string, body?: unknown) {
   const res = await fetch(`${CLIENT_BASE}${path}`, {
     method,
-    headers: { "Content-Type": "application/json", ...actorHeaders() },
+    headers: { "Content-Type": "application/json" },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) throw new Error((await res.text()) || `${method} ${path} failed`);
@@ -235,8 +218,7 @@ export async function uploadEvidence(
   if (meta.dated) fd.append("dated", meta.dated);
   const res = await fetch(`${CLIENT_BASE}/evidence/${requirementId}/upload`, {
     method: "POST",
-    headers: { ...actorHeaders() }, // no Content-Type — browser sets multipart boundary
-    body: fd,
+    body: fd, // no Content-Type — browser sets the multipart boundary
   });
   if (!res.ok) throw new Error((await res.text()) || "Upload failed");
   return res.json();
@@ -312,12 +294,12 @@ export interface InviteInfo {
   role?: string;
 }
 export async function getInvite(token: string): Promise<InviteInfo> {
-  const res = await fetch(`${CLIENT_BASE}/invite/${token}`, { cache: "no-store" });
+  const res = await fetch(`${PUBLIC_BASE}/invite/${token}`, { cache: "no-store" });
   if (!res.ok) return { valid: false, reason: "not_found" };
   return res.json();
 }
 export async function acceptInvite(token: string, password: string, name?: string) {
-  const res = await fetch(`${CLIENT_BASE}/invite/${token}/accept`, {
+  const res = await fetch(`${PUBLIC_BASE}/invite/${token}/accept`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password, name }),

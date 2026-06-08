@@ -207,11 +207,15 @@ async def generate(profile: dict, provider: str | None = None) -> dict:
     }
 
 
-async def commit(db: AsyncSession, profile: dict, items: list[dict], actor: str | None) -> dict:
+async def commit(db: AsyncSession, workspace_id: str, profile: dict, items: list[dict], actor: str | None) -> dict:
+    from app.services.framework_service import ensure_controls
     scope = scope_from_profile(profile)
+    await ensure_controls(db, workspace_id)
 
-    # 1) Persist the org profile + derived scope booleans + mark onboarded.
-    await db.execute(text("INSERT INTO org_profile (id) VALUES (1) ON CONFLICT (id) DO NOTHING"))
+    # 1) Persist this workspace's org profile + derived scope booleans + mark onboarded.
+    await db.execute(text(
+        "INSERT INTO org_profile (workspace_id) VALUES (:wid) ON CONFLICT (workspace_id) DO NOTHING"
+    ), {"wid": workspace_id})
     await db.execute(text("""
         UPDATE org_profile SET
             name = COALESCE(:name, name),
@@ -224,8 +228,9 @@ async def commit(db: AsyncSession, profile: dict, items: list[dict], actor: str 
             turnover_over_36m = :turn_over,
             onboarded_at = NOW(),
             updated_at = NOW()
-        WHERE id = 1
+        WHERE workspace_id = :wid
     """), {
+        "wid": workspace_id,
         "name": profile.get("name"),
         "org_type": profile.get("org_type"),
         "employee_band": profile.get("employee_band"),
@@ -238,13 +243,14 @@ async def commit(db: AsyncSession, profile: dict, items: list[dict], actor: str 
 
     # 2) Create workspace members from the distinct suggested owner roles.
     owners = {it["owner"].strip() for it in items if it.get("owner")}
-    existing = {r["name"] for r in (await db.execute(text("SELECT name FROM workspace_members"))).mappings().all()}
+    existing = {r["name"] for r in (await db.execute(text(
+        "SELECT name FROM workspace_members WHERE workspace_id = :wid"), {"wid": workspace_id})).mappings().all()}
     for name in sorted(owners - existing):
         await db.execute(text(
-            "INSERT INTO workspace_members (name, role) VALUES (:n, 'Suggested owner')"
-        ), {"n": name})
+            "INSERT INTO workspace_members (workspace_id, name, role) VALUES (:wid, :n, 'Suggested owner')"
+        ), {"wid": workspace_id, "n": name})
 
-    # 3) Apply each requirement's control state.
+    # 3) Apply each requirement's control state (within this workspace).
     code_to_req = {r["code"]: str(r["id"]) for r in
                    (await db.execute(text("SELECT id, code FROM requirements"))).mappings().all()}
     applied = 0
@@ -261,22 +267,23 @@ async def commit(db: AsyncSession, profile: dict, items: list[dict], actor: str 
                 last_reviewed = CASE WHEN :status = 'not_started' THEN NULL ELSE CURRENT_DATE END,
                 next_review_due = CASE WHEN :status = 'not_started' THEN NULL ELSE (CURRENT_DATE + INTERVAL '1 year')::date END,
                 updated_by = :actor, updated_at = NOW()
-            WHERE requirement_id = :rid
+            WHERE requirement_id = :rid AND workspace_id = :wid
         """), {"status": status, "description": it.get("narrative") or None,
-               "owner": it.get("owner") or None, "actor": actor or "Onboarding", "rid": rid})
+               "owner": it.get("owner") or None, "actor": actor or "Onboarding",
+               "rid": rid, "wid": workspace_id})
         applied += 1
 
     await db.execute(text("""
-        INSERT INTO audit_log (entity_type, action, actor, summary, detail)
-        VALUES ('framework', 'onboarded', :actor, :summary, CAST(:detail AS jsonb))
-    """), {"actor": actor or "Onboarding",
+        INSERT INTO audit_log (workspace_id, entity_type, action, actor, summary, detail)
+        VALUES (:wid, 'framework', 'onboarded', :actor, :summary, CAST(:detail AS jsonb))
+    """), {"wid": workspace_id, "actor": actor or "Onboarding",
            "summary": f"Framework created via onboarding — {applied} requirements set",
            "detail": json.dumps({"org_type": profile.get("org_type"), "in_scope": scope["in_scope"]})})
     await db.commit()
 
     # 4) First gap analysis over the committed state (the single source of truth for gaps).
     try:
-        await run_gap_analysis(db, actor=actor or "Onboarding")
+        await run_gap_analysis(db, workspace_id, actor=actor or "Onboarding")
     except Exception:
         pass  # don't fail onboarding if analysis hiccups
 

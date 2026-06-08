@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { fetchPillar } from "@/lib/api";
+import { fetchPillar } from "@/lib/server-api";
 import { ReadinessRing, ReviewBadge, StatusPill, scoreColor } from "@/components/ui";
 
 export const dynamic = "force-dynamic";

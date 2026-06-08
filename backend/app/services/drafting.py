@@ -16,23 +16,23 @@ narrative in the evidence provided — do not invent evidence. If evidence is th
 what should be added. Output the paragraph only, no preamble."""
 
 
-async def draft_control(db: AsyncSession, requirement_id: str,
+async def draft_control(db: AsyncSession, requirement_id: str, workspace_id: str,
                         provider: str | None = None) -> dict:
     req = (await db.execute(text("""
         SELECT r.code, r.title, r.description, r.guidance, p.name AS pillar_name,
                c.status, c.owner, c.description AS control_description
         FROM requirements r
         JOIN pillars p ON p.id = r.pillar_id
-        JOIN controls c ON c.requirement_id = r.id
+        JOIN controls c ON c.requirement_id = r.id AND c.workspace_id = :wid
         WHERE r.id = :rid
-    """), {"rid": requirement_id})).mappings().first()
+    """), {"rid": requirement_id, "wid": workspace_id})).mappings().first()
     if not req:
         raise ValueError("Requirement not found")
 
     evidence = (await db.execute(text(
         "SELECT title, kind, description, dated FROM evidence_items "
-        "WHERE requirement_id = :rid ORDER BY created_at"
-    ), {"rid": requirement_id})).mappings().all()
+        "WHERE requirement_id = :rid AND workspace_id = :wid ORDER BY created_at"
+    ), {"rid": requirement_id, "wid": workspace_id})).mappings().all()
 
     ev_lines = "\n".join(
         f"- {e['title']} ({e['kind']})" + (f": {e['description']}" if e['description'] else "")

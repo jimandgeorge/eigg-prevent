@@ -128,6 +128,43 @@ async def lifespan(_app):
             )
         """))
 
+        # ── Multi-tenancy: scope tenant data by workspace_id ───────────────────
+        from app.core.tenant import DEFAULT_WORKSPACE_ID
+        # The workspace legacy single-tenant data is migrated into.
+        await conn.execute(text("""
+            INSERT INTO workspaces (id, name, tier, products, status)
+            VALUES (:wid, 'Default workspace', 'free', ARRAY['prevent'], 'active')
+            ON CONFLICT (id) DO NOTHING
+        """), {"wid": DEFAULT_WORKSPACE_ID})
+
+        tenant_tables = ["controls", "evidence_items", "gap_findings", "workspace_members",
+                         "policy_versions", "audit_log", "org_profile"]
+        for tbl in tenant_tables:
+            await conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS workspace_id UUID"))
+        # Backfill legacy rows to the default workspace. audit_log/policy_versions are
+        # append-only (immutability trigger) — disable user triggers for the one-off update.
+        for tbl in tenant_tables:
+            immutable = tbl in ("audit_log", "policy_versions")
+            if immutable:
+                await conn.execute(text(f"ALTER TABLE {tbl} DISABLE TRIGGER USER"))
+            await conn.execute(text(f"UPDATE {tbl} SET workspace_id = :wid WHERE workspace_id IS NULL"),
+                               {"wid": DEFAULT_WORKSPACE_ID})
+            if immutable:
+                await conn.execute(text(f"ALTER TABLE {tbl} ENABLE TRIGGER USER"))
+        for tbl in ("controls", "evidence_items", "gap_findings", "workspace_members",
+                    "policy_versions", "audit_log"):
+            await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{tbl}_ws ON {tbl} (workspace_id)"))
+
+        # org_profile was a single row (id=1) — re-key per workspace.
+        await conn.execute(text("ALTER TABLE org_profile DROP CONSTRAINT IF EXISTS org_profile_id_check"))
+        await conn.execute(text("ALTER TABLE org_profile DROP CONSTRAINT IF EXISTS org_profile_pkey"))
+        await conn.execute(text("ALTER TABLE org_profile ALTER COLUMN id DROP NOT NULL"))
+        await conn.execute(text("ALTER TABLE org_profile ALTER COLUMN id DROP DEFAULT"))
+        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS org_profile_ws_uq ON org_profile (workspace_id)"))
+        # controls: unique per (workspace, requirement) instead of per requirement.
+        await conn.execute(text("ALTER TABLE controls DROP CONSTRAINT IF EXISTS controls_requirement_id_key"))
+        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS controls_ws_req_uq ON controls (workspace_id, requirement_id)"))
+
         # Seed the platform super-admin from env — the first-deploy backdoor into /admin.
         if settings.admin_email and settings.admin_password:
             from app.core.security import hash_password

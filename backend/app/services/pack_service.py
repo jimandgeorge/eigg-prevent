@@ -29,17 +29,18 @@ def _scope_assessment(profile: dict) -> dict:
     }
 
 
-async def build_pack(db: AsyncSession, actor: str | None = None) -> dict:
-    profile = (await db.execute(text("SELECT * FROM org_profile WHERE id = 1"))).mappings().first()
+async def build_pack(db: AsyncSession, workspace_id: str, actor: str | None = None) -> dict:
+    profile = (await db.execute(text("SELECT * FROM org_profile WHERE workspace_id = :wid"),
+                                {"wid": workspace_id})).mappings().first()
     profile = dict(profile) if profile else {}
 
-    fw = await load_framework(db)
+    fw = await load_framework(db, workspace_id)
 
     # Evidence per requirement.
     ev_rows = (await db.execute(text(
         "SELECT requirement_id, title, kind, reference, description, dated "
-        "FROM evidence_items ORDER BY created_at"
-    ))).mappings().all()
+        "FROM evidence_items WHERE workspace_id = :wid ORDER BY created_at"
+    ), {"wid": workspace_id})).mappings().all()
     evidence_by_req: dict[str, list] = {}
     for e in ev_rows:
         evidence_by_req.setdefault(str(e["requirement_id"]), []).append({
@@ -52,9 +53,9 @@ async def build_pack(db: AsyncSession, actor: str | None = None) -> dict:
         SELECT g.severity, g.title, g.detail, g.recommendation, g.pillar_id, r.code AS requirement_code
         FROM gap_findings g
         LEFT JOIN requirements r ON r.id = g.requirement_id
-        WHERE g.status = 'open'
+        WHERE g.status = 'open' AND g.workspace_id = :wid
         ORDER BY CASE g.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END
-    """))).mappings().all()
+    """), {"wid": workspace_id})).mappings().all()
 
     # Attach evidence into the framework structure for the report.
     for p in fw["pillars"]:
@@ -94,9 +95,10 @@ async def build_pack(db: AsyncSession, actor: str | None = None) -> dict:
     pack["integrity_hash"] = integrity_hash
 
     await db.execute(text("""
-        INSERT INTO audit_log (entity_type, action, actor, summary, detail)
-        VALUES ('pack', 'exported', :actor, :summary, CAST(:detail AS jsonb))
+        INSERT INTO audit_log (workspace_id, entity_type, action, actor, summary, detail)
+        VALUES (:wid, 'pack', 'exported', :actor, :summary, CAST(:detail AS jsonb))
     """), {
+        "wid": workspace_id,
         "actor": actor or "system",
         "summary": f"Evidence pack generated — overall readiness {fw['overall_score']}/100",
         "detail": json.dumps({"overall_score": fw["overall_score"], "integrity_hash": integrity_hash}),

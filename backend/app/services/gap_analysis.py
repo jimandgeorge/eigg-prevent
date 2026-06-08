@@ -81,9 +81,9 @@ def _mock_findings(fw: dict) -> list[dict]:
     return findings[:8]
 
 
-async def run_gap_analysis(db: AsyncSession, provider: str | None = None,
+async def run_gap_analysis(db: AsyncSession, workspace_id: str, provider: str | None = None,
                            actor: str | None = None) -> dict:
-    fw = await load_framework(db)
+    fw = await load_framework(db, workspace_id)
     provider = provider or llm.settings.llm_provider
 
     if provider == "mock":
@@ -96,8 +96,10 @@ async def run_gap_analysis(db: AsyncSession, provider: str | None = None,
     rows = (await db.execute(text("SELECT id, code FROM requirements"))).mappings().all()
     code_to_id = {r["code"]: str(r["id"]) for r in rows}
 
-    # Replace previously open AI findings with this fresh run.
-    await db.execute(text("DELETE FROM gap_findings WHERE source = 'ai' AND status = 'open'"))
+    # Replace this workspace's previously open AI findings with this fresh run.
+    await db.execute(text(
+        "DELETE FROM gap_findings WHERE source = 'ai' AND status = 'open' AND workspace_id = :wid"
+    ), {"wid": workspace_id})
 
     model = llm.model_name(provider)
     stored = []
@@ -105,12 +107,13 @@ async def run_gap_analysis(db: AsyncSession, provider: str | None = None,
         rid = code_to_id.get(f.get("requirement_code"))
         await db.execute(text("""
             INSERT INTO gap_findings
-                (pillar_id, requirement_id, severity, title, detail, recommendation,
+                (workspace_id, pillar_id, requirement_id, severity, title, detail, recommendation,
                  status, source, llm_provider, llm_model)
             VALUES
-                (:pillar_id, :rid, :severity, :title, :detail, :rec,
+                (:wid, :pillar_id, :rid, :severity, :title, :detail, :rec,
                  'open', 'ai', :provider, :model)
         """), {
+            "wid": workspace_id,
             "pillar_id": f.get("pillar_id"),
             "rid": rid,
             "severity": f.get("severity", "medium"),
@@ -123,9 +126,10 @@ async def run_gap_analysis(db: AsyncSession, provider: str | None = None,
         stored.append(f)
 
     await db.execute(text("""
-        INSERT INTO audit_log (entity_type, action, actor, summary, detail)
-        VALUES ('gap', 'analysis_run', :actor, :summary, CAST(:detail AS jsonb))
+        INSERT INTO audit_log (workspace_id, entity_type, action, actor, summary, detail)
+        VALUES (:wid, 'gap', 'analysis_run', :actor, :summary, CAST(:detail AS jsonb))
     """), {
+        "wid": workspace_id,
         "actor": actor or "system",
         "summary": f"AI gap analysis identified {len(stored)} finding(s)",
         "detail": json.dumps({"provider": provider, "model": model, "count": len(stored)}),

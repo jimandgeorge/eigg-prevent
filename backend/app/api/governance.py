@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.tenant import current_workspace
 from app.services import governance
 
 router = APIRouter(prefix="/governance", tags=["governance"])
@@ -19,20 +20,21 @@ class ApprovalCreate(BaseModel):
 
 
 @router.get("/approvals")
-async def list_approvals(db: AsyncSession = Depends(get_db)):
-    return await governance.list_chain(db)
+async def list_approvals(db: AsyncSession = Depends(get_db), wid: str = Depends(current_workspace)):
+    return await governance.list_chain(db, wid)
 
 
 @router.post("/approvals")
 async def create_approval(
     body: ApprovalCreate,
     db: AsyncSession = Depends(get_db),
+    wid: str = Depends(current_workspace),
     x_actor: str | None = Header(default=None),
 ):
     if not body.title.strip() or not body.version.strip() or not body.approved_by.strip():
         raise HTTPException(400, "title, version and approved_by are required")
     return await governance.add_entry(
-        db,
+        db, wid,
         title=body.title.strip(),
         version=body.version.strip(),
         summary=(body.summary or None),
